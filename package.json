@@ -1,14 +1,21 @@
 {
   "name": "bizz",
   "version": "0.1.0",
+  "type": "module",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:quiz": "node scripts/test-quiz.js",
     "test:contracts": "node scripts/test-contracts.js",
-    "deploy:testnet": "node scripts/deploy-testnet.js"
+    "deploy:testnet": "node scripts/deploy-testnet.js",
+    "test:report": "node scripts/test-report.js",
+    "test:all": "npm run test:quiz && npm run test:report",
+    "deploy:preview": "npx vercel",
+    "deploy:prod": "npx vercel --prod",
+    "test:testnet": "node scripts/test-quiz-testnet.js"
   },
   "dependencies": {
     "@bitcoin-computer/lib": "^0.26.0-beta.0",
