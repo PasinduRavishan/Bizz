@@ -1,36 +1,80 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Bizz - Decentralized Quiz Platform
+
+A decentralized quiz application built on Bitcoin using Bitcoin Computer smart contracts.
+
+## Features
+
+- 🎓 Teachers create incentivized quizzes
+- 💰 Students earn Bitcoin for correct answers
+- 🔐 Trustless escrow via smart contracts
+- ⛓️ Fully on-chain verification
+- 🚀 Built with Next.js & Bitcoin Computer
+
+## Tech Stack
+
+- **Frontend:** Next.js 14, TypeScript, Tailwind CSS
+- **Smart Contracts:** Bitcoin Computer (JavaScript)
+- **Storage:** IPFS
+- **Network:** Bitcoin/Litecoin Testnet
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
+- Node.js 18+ 
+- npm or yarn
+
+### Installation
+
+1. Clone the repository
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone <your-repo-url>
+cd bizz
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Install dependencies
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Set up environment variables
+```bash
+cp .env.example .env.local
+# Edit .env.local with your values
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Run development server
+```bash
+npm run dev
+```
 
-## Learn More
+5. Open [http://localhost:3000](http://localhost:3000)
 
-To learn more about Next.js, take a look at the following resources:
+## Project Structure
+```
+bizz/
+├── contracts/          # Smart contracts
+├── src/
+│   ├── app/           # Next.js pages (App Router)
+│   ├── components/    # React components
+│   ├── lib/           # Utility libraries
+│   ├── hooks/         # Custom React hooks
+│   └── types/         # TypeScript types
+├── scripts/           # Deployment & test scripts
+└── docs/              # Documentation
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Development
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run lint` - Run ESLint
+- `npm test:contracts` - Test smart contracts
 
-## Deploy on Vercel
+## License
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+MIT
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Contributing
+
+Contributions welcome! Please open an issue or PR.
