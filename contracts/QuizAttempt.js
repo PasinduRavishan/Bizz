@@ -1,4 +1,5 @@
 import { Contract } from '@bitcoin-computer/lib'
+import crypto from 'crypto'
 
 /**
  * QuizAttempt Smart Contract
@@ -86,7 +87,7 @@ class QuizAttempt extends Contract {
    * @private
    */
   _hashCommitment(answers, nonce) {
-    const crypto = require('crypto')
+    
     const data = JSON.stringify(answers) + nonce
     return crypto.createHash('sha256').update(data).digest('hex')
   }

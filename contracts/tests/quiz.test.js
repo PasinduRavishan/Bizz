@@ -4,7 +4,6 @@
 
 import Quiz from '../Quiz.js'
 import { Computer } from '@bitcoin-computer/lib'
-import crypto from 'crypto'
 
 describe('Quiz Contract', () => {
   let computer

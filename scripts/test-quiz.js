@@ -28,7 +28,7 @@ async function testQuizLogic() {
     // Step 1: Setup test data
     console.log('📝 Setting up test quiz...')
     
-    const teacherPubKey = '0303385b0bf13122381a8f65291222aa3b93eb918f569fdfdf0fee0f52cc098557'
+    // const teacherPubKey = '0303385b0bf13122381a8f65291222aa3b93eb918f569fdfdf0fee0f52cc098557'
     const quizId = 'test-quiz-' + Date.now()
     
     const questions = [

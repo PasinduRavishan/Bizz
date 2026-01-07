@@ -65,7 +65,7 @@ export function didPass(score, threshold, totalQuestions) {
  * @param {Object} computer - Bitcoin Computer instance
  * @returns {Object} Verification results
  */
-export async function verifyQuiz(quiz, attempts, computer) {
+export async function verifyQuiz(quiz, attempts) {
   if (quiz.status !== 'revealed') {
     throw new Error('Quiz must be revealed first')
   }

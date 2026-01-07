@@ -1,4 +1,5 @@
 import { Contract } from '@bitcoin-computer/lib'
+import crypto from 'crypto'
 
 /**
  * Quiz Smart Contract
@@ -190,7 +191,7 @@ class Quiz extends Contract {
   _hashAnswer(quizId, index, answer, salt) {
     // We'll implement this using crypto in the helper library
     // For now, this is a placeholder
-    const crypto = require('crypto')
+    
     const data = `${quizId}${index}${answer}${salt}`
     return crypto.createHash('sha256').update(data).digest('hex')
   }
