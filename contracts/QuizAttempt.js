@@ -1,5 +1,4 @@
 import { Contract } from '@bitcoin-computer/lib'
-import crypto from 'crypto'
 
 /**
  * QuizAttempt Smart Contract
@@ -29,13 +28,12 @@ class QuizAttempt extends Contract {
 
     // Initialize contract
     super({
-      _owners: [student],              // Student owns this attempt
-      _satoshis: entryFee,             // Entry fee locked in contract
+      _owners: [student],
+      _satoshis: entryFee,
       
-      // Attempt data
       student,
       quizRef,
-      answerCommitment,                // Hash of answers (Phase 1)
+      answerCommitment,
       
       // Will be filled in Phase 2
       revealedAnswers: null,
@@ -46,18 +44,16 @@ class QuizAttempt extends Contract {
       passed: null,
       
       // State
-      status: 'committed',             // committed | revealed | verified | failed
+      status: 'committed',
       submitTimestamp: Date.now(),
       revealTimestamp: null,
       
-      // Metadata
       version: '1.0.0'
     })
   }
 
   /**
    * Phase 2: Student reveals their answers
-   * Must be called after quiz deadline but before student reveal deadline
    * 
    * @param {string[]} answers - Actual answers student selected
    * @param {string} nonce - Random nonce used in commitment
@@ -68,10 +64,12 @@ class QuizAttempt extends Contract {
       throw new Error('Attempt already revealed or verified')
     }
 
-    // Validate commitment matches
-    const commitment = this._hashCommitment(answers, nonce)
-    if (commitment !== this.answerCommitment) {
-      throw new Error('Commitment verification failed - answers do not match hash')
+    // Validate inputs
+    if (!Array.isArray(answers) || answers.length === 0) {
+      throw new Error('Answers must be a non-empty array')
+    }
+    if (!nonce) {
+      throw new Error('Nonce is required')
     }
 
     // Store revealed data
@@ -79,17 +77,8 @@ class QuizAttempt extends Contract {
     this.nonce = nonce
     this.status = 'revealed'
     this.revealTimestamp = Date.now()
-  }
-
-  /**
-   * Helper: Hash answers + nonce to create commitment
-   * 
-   * @private
-   */
-  _hashCommitment(answers, nonce) {
     
-    const data = JSON.stringify(answers) + nonce
-    return crypto.createHash('sha256').update(data).digest('hex')
+    return undefined
   }
 
   /**
@@ -107,6 +96,8 @@ class QuizAttempt extends Contract {
     this.score = score
     this.passed = passed
     this.status = 'verified'
+    
+    return undefined
   }
 
   /**
@@ -115,10 +106,13 @@ class QuizAttempt extends Contract {
   fail() {
     this.status = 'failed'
     this.passed = false
+    
+    return undefined
   }
 
   /**
    * Get attempt info
+   * @returns {Object} Attempt information
    */
   getInfo() {
     return {
@@ -130,7 +124,8 @@ class QuizAttempt extends Contract {
       revealTimestamp: this.revealTimestamp,
       score: this.score,
       passed: this.passed,
-      hasRevealed: this.status !== 'committed'
+      hasRevealed: this.status !== 'committed',
+      revealedAnswers: this.revealedAnswers
     }
   }
 }

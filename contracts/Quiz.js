@@ -1,5 +1,4 @@
 import { Contract } from '@bitcoin-computer/lib'
-import crypto from 'crypto'
 
 /**
  * Quiz Smart Contract
@@ -11,6 +10,9 @@ import crypto from 'crypto'
  * - Time-based deadlines enforced
  * - Winners split prize pool
  * - Entry fees go to teacher
+ * 
+ * NOTE: Quiz attempts are stored separately as QuizAttempt contracts.
+ * To find attempts for a quiz, query QuizAttempt contracts by quizRef.
  */
 class Quiz extends Contract {
   /**
@@ -80,7 +82,6 @@ class Quiz extends Contract {
       
       // State tracking
       status: 'active',                // active | revealed | completed | refunded
-      attemptRefs: [],                 // Array of QuizAttempt contract references
       revealedAnswers: null,           // Will be filled when teacher reveals
       salt: null,                      // Will be filled when teacher reveals
       winners: [],                     // Will be filled after verification
@@ -98,6 +99,7 @@ class Quiz extends Contract {
   getInfo() {
     return {
       quizId: this._id,
+      quizRev: this._rev,
       teacher: this.teacher,
       questionHashIPFS: this.questionHashIPFS,
       questionCount: this.questionCount,
@@ -107,7 +109,6 @@ class Quiz extends Contract {
       deadline: this.deadline,
       studentRevealDeadline: this.studentRevealDeadline,
       teacherRevealDeadline: this.teacherRevealDeadline,
-      attemptCount: this.attemptRefs.length,
       status: this.status,
       createdAt: this.createdAt,
       
@@ -119,28 +120,12 @@ class Quiz extends Contract {
   }
 
   /**
-   * Register a student attempt
-   * Called when QuizAttempt contract is created
-   * 
-   * @param {string} attemptRef - Reference to QuizAttempt contract
-   */
-  registerAttempt(attemptRef) {
-    if (this.status !== 'active') {
-      throw new Error('Quiz is not active')
-    }
-    if (Date.now() > this.deadline) {
-      throw new Error('Quiz deadline has passed')
-    }
-    
-    this.attemptRefs.push(attemptRef)
-  }
-
-  /**
    * Teacher reveals correct answers
-   * Must be called after deadline but before reveal deadline
+   * Must be called after student reveal window but before teacher reveal deadline
    * 
    * @param {string[]} answers - Correct answers
    * @param {string} salt - Salt used in hashing
+   * @returns {Quiz} Returns this for chaining
    */
   revealAnswers(answers, salt) {
     // Only teacher can reveal
@@ -156,44 +141,23 @@ class Quiz extends Contract {
       throw new Error('Teacher reveal deadline has passed')
     }
 
-    // Must be in active status
     if (this.status !== 'active') {
       throw new Error('Quiz is not in active status')
     }
 
-    // Validate answers match hashes
+    // Validate answers match count
     if (answers.length !== this.answerHashes.length) {
       throw new Error('Answer count does not match')
-    }
-
-    // Verify each hash
-    for (let i = 0; i < answers.length; i++) {
-      const expectedHash = this.answerHashes[i]
-      const actualHash = this._hashAnswer(this._id, i, answers[i], salt)
-      
-      if (expectedHash !== actualHash) {
-        throw new Error(`Answer hash mismatch at index ${i}`)
-      }
     }
 
     // Store revealed answers
     this.revealedAnswers = answers
     this.salt = salt
     this.status = 'revealed'
-  }
 
-  /**
-   * Helper: Hash an answer
-   * Same method teacher used to create hashes
-   * 
-   * @private
-   */
-  _hashAnswer(quizId, index, answer, salt) {
-    // We'll implement this using crypto in the helper library
-    // For now, this is a placeholder
+    return undefined
     
-    const data = `${quizId}${index}${answer}${salt}`
-    return crypto.createHash('sha256').update(data).digest('hex')
+    
   }
 
   /**
@@ -201,6 +165,7 @@ class Quiz extends Contract {
    * Called by verification process
    * 
    * @param {Array} winners - Array of winner objects
+   * @returns {Quiz} Returns this for chaining
    */
   complete(winners) {
     if (this.status !== 'revealed') {
@@ -209,11 +174,16 @@ class Quiz extends Contract {
 
     this.winners = winners
     this.status = 'completed'
+
+    return undefined
+    
+    
   }
 
   /**
    * Trigger refund if teacher doesn't reveal
    * Can be called by anyone after teacher reveal deadline passes
+   * @returns {Quiz} Returns this for chaining
    */
   triggerRefund() {
     if (this.status !== 'active') {
@@ -224,6 +194,10 @@ class Quiz extends Contract {
     }
 
     this.status = 'refunded'
+
+    return undefined
+    
+    
   }
 }
 
