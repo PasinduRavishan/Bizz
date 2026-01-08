@@ -84,7 +84,7 @@ jobs:
       - name: Build Next.js app
         run: npm run build
         env:
-          NEXT_PUBLIC_BITCOIN_COMPUTER_NETWORK: testnet
+          NEXT_PUBLIC_BITCOIN_COMPUTER_NETWORK: regtest
           NEXT_PUBLIC_BITCOIN_COMPUTER_CHAIN: LTC
       
       - name: Upload build artifacts

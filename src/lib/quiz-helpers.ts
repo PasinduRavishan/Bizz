@@ -1,6 +1,8 @@
-// @ts-ignore
+// @ts-expect-error - Bitcoin Computer lib doesn't have proper TypeScript types
 import { Computer } from '@bitcoin-computer/lib'
 // import QuizAttempt from '../../contracts/QuizAttempt'
+
+import crypto from 'crypto'
 
 /**
  * Query all attempts for a specific quiz
@@ -12,7 +14,7 @@ import { Computer } from '@bitcoin-computer/lib'
 export async function getQuizAttempts(
   computer: typeof Computer.prototype,
   quizRev: string
-): Promise<any[]> {
+): Promise<unknown[]> {
   // Bitcoin Computer doesn't have built-in query yet
   // For now, we track attempts off-chain in our database
   // Or we can sync all QuizAttempt contracts and filter
@@ -20,6 +22,7 @@ export async function getQuizAttempts(
   // This will be implemented when we add the indexer
   // For now, return empty array
   console.log('📊 Querying attempts for quiz:', quizRev)
+  console.log('📊 Computer instance:', computer)
   return []
 }
 
@@ -30,6 +33,7 @@ export async function getQuizAttempts(
 export async function getAttemptCount(quizRev: string): Promise<number> {
   // Query from database
   // For now, return 0
+  console.log('📊 Getting attempt count for:', quizRev)
   return 0
 }
 
@@ -42,7 +46,6 @@ export function verifyCommitment(
   nonce: string,
   commitment: string
 ): boolean {
-  const crypto = require('crypto')
   const data = JSON.stringify(answers) + nonce
   const hash = crypto.createHash('sha256').update(data).digest('hex')
   return hash === commitment
@@ -59,7 +62,6 @@ export function verifyAnswerHash(
   salt: string,
   expectedHash: string
 ): boolean {
-  const crypto = require('crypto')
   const data = `${quizId}${index}${answer}${salt}`
   const hash = crypto.createHash('sha256').update(data).digest('hex')
   return hash === expectedHash

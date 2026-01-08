@@ -1,15 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { getComputerConfig } from '@/lib/bitcoin-computer'
 
 export default function NetworkStatus() {
-  const [config, setConfig] = useState<any>(null)
-
-  useEffect(() => {
-    const conf = getComputerConfig()
-    setConfig(conf)
-  }, [])
+  const config = getComputerConfig()
 
   if (!config) return null
 

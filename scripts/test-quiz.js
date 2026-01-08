@@ -236,11 +236,7 @@ async function testQuizOnRegtest() {
 testQuizOnRegtest()
   .then(() => {
     console.log('✅✅✅ ALL TESTS PASSED! ✅✅✅')
-    console.log()
-    console.log('🎓 Bizz Quiz Platform')
-    console.log('   Smart Contracts: VERIFIED ✅')
-    console.log('   Architecture: OPTIMIZED ✅')
-    console.log('   Ready for: FRONTEND DEVELOPMENT 🎨')
+    
     console.log()
     process.exit(0)
   })

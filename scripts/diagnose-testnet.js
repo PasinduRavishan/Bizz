@@ -66,7 +66,7 @@ async function testDNS(hostname) {
       const records = await dnsResolve(hostname)
       log('green', `   ✅ Alternative DNS found: ${records[0]}`)
       return { success: true, ip: records[0], alternative: true }
-    } catch (altError) {
+    } catch {
       log('red', `   ❌ Alternative DNS also failed`)
       return { success: false, error: error.code }
     }
@@ -181,7 +181,7 @@ async function testNetwork() {
     log('green', '   ✅ Can reach other blockchain APIs')
     
     return { success: true }
-  } catch (error) {
+  } catch {
     log('red', '   ❌ Network issues detected')
     return { success: false }
   }

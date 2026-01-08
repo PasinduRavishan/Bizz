@@ -1,4 +1,4 @@
-// @ts-ignore
+// @ts-expect-error - Bitcoin Computer lib doesn't have proper TypeScript types
 import { Computer } from '@bitcoin-computer/lib'
 
 /**
@@ -11,7 +11,7 @@ interface ComputerConfig {
   network?: 'mainnet' | 'testnet' | 'regtest'
   mnemonic?: string
   url?: string
-  [key: string]: any  // Allow additional properties
+  [key: string]: unknown  // Allow additional properties
 }
 
 /**
@@ -33,7 +33,7 @@ export function createComputer(options: ComputerConfig = {}): typeof Computer.pr
   console.log('   Network:', config.network)
   console.log('   URL:', config.url)
 
-  return new Computer(config) as any
+  return new Computer(config) as typeof Computer.prototype
 }
 
 /**
@@ -41,10 +41,10 @@ export function createComputer(options: ComputerConfig = {}): typeof Computer.pr
  */
 export function createComputerFromEnv(): typeof Computer.prototype {
   return new Computer({
-    chain: (process.env.NEXT_PUBLIC_BITCOIN_COMPUTER_CHAIN || 'LTC') as any,
-    network: (process.env.NEXT_PUBLIC_BITCOIN_COMPUTER_NETWORK || 'regtest') as any,
+    chain: (process.env.NEXT_PUBLIC_BITCOIN_COMPUTER_CHAIN || 'LTC') as 'LTC' | 'BTC' | 'DOGE',
+    network: (process.env.NEXT_PUBLIC_BITCOIN_COMPUTER_NETWORK || 'regtest') as 'mainnet' | 'testnet' | 'regtest',
     url: process.env.NEXT_PUBLIC_BITCOIN_COMPUTER_URL || 'https://rltc.node.bitcoincomputer.io'
-  }) as any
+  }) as typeof Computer.prototype
 }
 
 /**
