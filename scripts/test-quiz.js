@@ -6,6 +6,13 @@ import { Computer } from '@bitcoin-computer/lib'
 import Quiz from '../contracts/Quiz.js'
 import QuizAttempt from '../contracts/QuizAttempt.js'
 import crypto from 'crypto'
+import dotenv from 'dotenv'
+import { resolve, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+// Load environment variables
+const __dirname = dirname(fileURLToPath(import.meta.url))
+dotenv.config({ path: resolve(__dirname, '../.env.local') })
 
 // Helper functions
 function hashAnswer(quizId, index, answer, salt) {
@@ -38,11 +45,20 @@ async function testQuizOnRegtest() {
   try {
     // Step 1: Setup
     console.log('📡 Connecting to Bitcoin Computer (Regtest)...')
-    const computer = new Computer({
+    
+    const computerConfig = {
       chain: 'LTC',
       network: 'regtest',
       url: 'https://rltc.node.bitcoincomputer.io'
-    })
+    }
+    
+    // Use shared wallet if mnemonic is provided
+    if (process.env.BITCOIN_COMPUTER_MNEMONIC) {
+      computerConfig.mnemonic = process.env.BITCOIN_COMPUTER_MNEMONIC
+      console.log('   Using shared wallet from environment')
+    }
+    
+    const computer = new Computer(computerConfig)
     console.log('✅ Connected!')
     console.log('📍 Address:', computer.getAddress())
     console.log()
