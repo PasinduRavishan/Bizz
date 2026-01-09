@@ -1,0 +1,225 @@
+// Database schema for Bizz Quiz Platform
+// This is the off-chain database that indexes blockchain data
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note: Using Prisma 5 syntax. VSCode extension may show errors if it's using Prisma 7.
+// The schema is valid - run `npx prisma validate` to confirm.
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+        
+
+// User model - tracks users by their public key
+model User {
+  id            String   @id @default(cuid())
+  publicKey     String   @unique
+  address       String   @unique
+  role          Role     @default(STUDENT)
+  
+  // Stats
+  totalEarnings BigInt   @default(0)
+  quizzesCreated Int     @default(0)
+  quizzesTaken   Int     @default(0)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  quizzes       Quiz[]
+  attempts      QuizAttempt[]
+  
+  @@index([publicKey])
+  @@index([address])
+}
+
+enum Role {
+  TEACHER
+  STUDENT
+  BOTH
+}
+
+// Quiz model - indexes on-chain Quiz contracts
+model Quiz {
+  id                String   @id @default(cuid())
+  
+  // Blockchain data
+  contractId        String   @unique  // _id from Bitcoin Computer
+  contractRev       String   @unique  // _rev from Bitcoin Computer
+  txHash            String?            // Transaction hash
+  
+  // Quiz data
+  teacherId         String
+  teacher           User     @relation(fields: [teacherId], references: [id])
+  
+  questionHashIPFS  String             // IPFS hash of questions
+  answerHashes      String[]           // Array of hashed answers
+  questionCount     Int
+  
+  // Economics
+  prizePool         BigInt
+  entryFee          BigInt
+  passThreshold     Int                // 0-100
+  platformFee       Float   @default(0.02)
+  
+  // Timing
+  deadline              DateTime
+  studentRevealDeadline DateTime
+  teacherRevealDeadline DateTime
+  
+  // State
+  status            QuizStatus @default(ACTIVE)
+  revealedAnswers   String[]           // Actual answers after reveal
+  salt              String?            // Salt used in hashing
+  
+  // Metadata
+  title             String?            // Optional title (not on chain)
+  description       String?            // Optional description
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  attempts          QuizAttempt[]
+  winners           Winner[]
+  
+  @@index([teacherId])
+  @@index([status])
+  @@index([deadline])
+  @@index([contractId])
+}
+
+enum QuizStatus {
+  ACTIVE
+  REVEALED
+  COMPLETED
+  REFUNDED
+}
+
+// QuizAttempt model - indexes on-chain QuizAttempt contracts
+model QuizAttempt {
+  id              String   @id @default(cuid())
+  
+  // Blockchain data
+  contractId      String   @unique  // _id from Bitcoin Computer
+  contractRev     String   @unique  // _rev from Bitcoin Computer
+  txHash          String?            // Transaction hash
+  
+  // Attempt data
+  studentId       String
+  student         User     @relation(fields: [studentId], references: [id])
+  
+  quizId          String
+  quiz            Quiz     @relation(fields: [quizId], references: [id])
+  
+  answerCommitment String            // Hash of answers + nonce
+  revealedAnswers  String[]          // Actual answers after reveal
+  nonce            String?           // Nonce used in commitment
+  
+  // Results
+  score            Int?              // 0-100
+  passed           Boolean?
+  prizeAmount      BigInt?           // If winner
+  
+  // State
+  status           AttemptStatus @default(COMMITTED)
+  
+  // Timestamps
+  submitTimestamp  DateTime
+  revealTimestamp  DateTime?
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  // Relations
+  winner           Winner?
+  
+  @@index([studentId])
+  @@index([quizId])
+  @@index([status])
+  @@index([contractId])
+}
+
+enum AttemptStatus {
+  COMMITTED
+  REVEALED
+  VERIFIED
+  FAILED
+}
+
+// Winner model - tracks quiz winners
+model Winner {
+  id          String   @id @default(cuid())
+  
+  quizId      String
+  quiz        Quiz     @relation(fields: [quizId], references: [id])
+  
+  attemptId   String   @unique
+  attempt     QuizAttempt @relation(fields: [attemptId], references: [id])
+  
+  score       Int
+  prizeAmount BigInt
+  paid        Boolean  @default(false)
+  paidTxHash  String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([quizId])
+  @@index([paid])
+}
+
+// Transaction model - tracks all blockchain transactions
+model Transaction {
+  id          String   @id @default(cuid())
+  
+  txHash      String   @unique
+  type        TransactionType
+  status      TransactionStatus @default(PENDING)
+  
+  fromAddress String
+  toAddress   String?
+  amount      BigInt?
+  
+  // Related entities
+  relatedQuizId    String?
+  relatedAttemptId String?
+  
+  errorMessage String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([txHash])
+  @@index([type])
+  @@index([status])
+  @@index([fromAddress])
+}
+
+enum TransactionType {
+  QUIZ_CREATION
+  QUIZ_ATTEMPT
+  REVEAL_ANSWERS
+  PAYOUT
+  REFUND
+}
+
+enum TransactionStatus {
+  PENDING
+  CONFIRMING
+  CONFIRMED
+  FAILED
+}
+
+// IndexerState - tracks indexer sync status
+model IndexerState {
+  id              String   @id @default("singleton")
+  lastBlockHeight Int      @default(0)
+  lastSyncTime    DateTime @default(now())
+  
+  updatedAt       DateTime @updatedAt
+}
