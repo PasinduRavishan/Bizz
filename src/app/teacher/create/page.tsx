@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
-import { useWallet } from '@/contexts/WalletContext'
 import { createQuiz } from '@/services/quiz-service'
 
 interface Question {
@@ -17,8 +16,6 @@ interface Question {
 type DeploymentStep = 'idle' | 'validating' | 'deploying' | 'success' | 'error'
 
 export default function CreateQuizPage() {
-  const { computer, connected, balance, publicKey } = useWallet()
-
   const [title, setTitle] = useState('')
   const [questions, setQuestions] = useState<Question[]>([
     { question: '', options: ['', '', '', ''], correctAnswer: 0 }
@@ -74,14 +71,6 @@ export default function CreateQuizPage() {
       return 'Entry fee must be at least 5,000 satoshis'
     }
 
-    // Only check balance if wallet is connected
-    if (connected && publicKey) {
-      const requiredBalance = prizePoolNum + 500000 // Prize pool + gas estimate
-      if (balance < BigInt(requiredBalance)) {
-        return `Insufficient wallet balance. You need at least ${requiredBalance.toLocaleString()} sats (prize pool + gas). Current balance: ${balance.toString()} sats. Note: You can still create the quiz using server wallet.`
-      }
-    }
-
     if (!deadline) {
       return 'Please set a deadline'
     }
@@ -132,8 +121,7 @@ export default function CreateQuizPage() {
         entryFee: parseInt(entryFee),
         passThreshold: parseInt(passThreshold),
         deadline: new Date(deadline),
-        title: title.trim(),
-        teacherPublicKey: publicKey || undefined // Pass public key only if wallet connected
+        title: title.trim()
       })
 
       if (result.success && result.quizId) {
@@ -166,26 +154,6 @@ export default function CreateQuizPage() {
           Set up your quiz with prize pool and questions
         </p>
       </div>
-
-        {/* Wallet Not Connected Info */}
-        {!connected && (
-          <Card className="mb-6 border-blue-500">
-            <CardBody className="bg-blue-50 dark:bg-blue-900/20">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">ℹ️</span>
-                <div>
-                  <p className="font-medium text-blue-800 dark:text-blue-200">
-                    Wallet Not Connected
-                  </p>
-                  <p className="text-sm text-blue-700 dark:text-blue-300">
-                    You can create a quiz without connecting your wallet. The server will handle the blockchain deployment.
-                    Connect your wallet later if you want to use your own funds for the prize pool.
-                  </p>
-                </div>
-              </div>
-            </CardBody>
-          </Card>
-        )}
 
         {/* Success State */}
         {deploymentStep === 'success' && createdQuizId && (
@@ -325,22 +293,6 @@ export default function CreateQuizPage() {
                     required
                   />
                 </div>
-
-                {connected && (
-                  <div className="bg-gray-100 dark:bg-zinc-800 rounded-lg p-4 text-sm">
-                    <p className="text-gray-600 dark:text-gray-400">
-                      <strong>Your Balance:</strong> {(Number(balance) / 100000000).toFixed(5)} LTC (
-                      {balance.toString()} sats)
-                    </p>
-                    {prizePool && (
-                      <p className="text-gray-600 dark:text-gray-400 mt-1">
-                        <strong>Estimated Cost:</strong>{' '}
-                        {((parseInt(prizePool) + 500000) / 100000000).toFixed(5)} LTC (prize pool +
-                        gas)
-                      </p>
-                    )}
-                  </div>
-                )}
               </CardBody>
             </Card>
 
@@ -413,7 +365,7 @@ export default function CreateQuizPage() {
                   Cancel
                 </Button>
               </Link>
-              <Button type="submit" className="flex-1" disabled={isLoading || !connected}>
+              <Button type="submit" className="flex-1" disabled={isLoading}>
                 {isLoading ? 'Deploying...' : 'Create Quiz & Deploy'}
               </Button>
             </div>

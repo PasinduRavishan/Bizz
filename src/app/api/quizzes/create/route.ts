@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { generateSalt, hashAnswers } from '@/lib/crypto'
 import { uploadQuestionsToIPFS, storeQuestionsLocally } from '@/lib/ipfs'
 import { prisma } from '@/lib/prisma'
+import { getUserWallet } from '@/lib/wallet-service'
 
 export const runtime = 'nodejs'
 
@@ -83,23 +84,18 @@ export async function POST(request: NextRequest) {
     // @ts-expect-error
     const { Computer } = await import('@bitcoin-computer/lib')
 
-    const computer = new Computer({
-      chain: (process.env.NEXT_PUBLIC_BITCOIN_COMPUTER_CHAIN || 'LTC') as 'LTC',
-      network: (process.env.NEXT_PUBLIC_BITCOIN_COMPUTER_NETWORK || 'regtest') as 'regtest',
-      url: process.env.NEXT_PUBLIC_BITCOIN_COMPUTER_URL || 'https://rltc.node.bitcoincomputer.io',
-      ...(process.env.BITCOIN_COMPUTER_MNEMONIC && { mnemonic: process.env.BITCOIN_COMPUTER_MNEMONIC })
-    })
+    // Get user's custodial wallet
+    console.log('🔑 Getting teacher custodial wallet...')
+    const computer = await getUserWallet(session.user.id)
+    const teacherPublicKey = computer.getPublicKey()
 
-    console.log('🚀 Server wallet address:', computer.getAddress())
+    console.log('🚀 Teacher wallet address:', computer.getAddress())
     console.log('🚀 Creating quiz contract...')
     console.log('  Teacher ID:', session.user.id)
-    console.log('  Teacher Public Key:', body.teacherPublicKey?.substring(0, 20) + '...' || 'None (using session)')
+    console.log('  Teacher Public Key:', teacherPublicKey.substring(0, 20) + '...')
     console.log('  Questions:', body.questions.length)
     console.log('  Prize Pool:', body.prizePool, 'sats')
     console.log('  Entry Fee:', body.entryFee, 'sats')
-
-    // Use teacherPublicKey from wallet if provided, otherwise use server wallet as placeholder
-    const teacherPublicKey = body.teacherPublicKey || computer.getPublicKey()
 
     const salt = generateSalt()
     const tempQuizId = `quiz-${Date.now()}-${Math.random().toString(36).substring(7)}`
@@ -252,13 +248,13 @@ export async function POST(request: NextRequest) {
         throw new Error('Teacher user not found')
       }
 
-      // Update user's publicKey if provided and not already set
-      if (body.teacherPublicKey && !teacher.publicKey) {
+      // Update user's publicKey if not already set
+      if (!teacher.publicKey) {
         await prisma.user.update({
           where: { id: teacher.id },
           data: {
-            publicKey: body.teacherPublicKey,
-            address: body.teacherPublicKey.substring(0, 40)
+            publicKey: teacherPublicKey,
+            address: computer.getAddress()
           }
         })
         console.log('👤 Updated teacher wallet info')

@@ -11,7 +11,7 @@ export interface SubmitAttemptParams {
   quizRev: string // Quiz contract revision
   answers: string[] // Array of selected answers
   entryFee: number // Entry fee in satoshis
-  studentPublicKey: string // Student's public key from wallet
+  studentPublicKey?: string // Optional - uses custodial wallet if not provided
 }
 
 export interface SubmitAttemptResult {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { initializeUserWallet } from '@/lib/wallet-service'
 import bcrypt from 'bcryptjs'
 
 export async function POST(request: NextRequest) {
@@ -53,18 +54,46 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    return NextResponse.json(
-      { 
-        message: 'User created successfully',
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        }
-      },
-      { status: 201 }
-    )
+    console.log(`👤 Created user ${user.id} (${user.role})`)
+
+    // Initialize custodial wallet for the user
+    try {
+      const walletInfo = await initializeUserWallet(user.id)
+      console.log(`✅ Wallet created for ${user.email}: ${walletInfo.address}`)
+      
+      return NextResponse.json(
+        { 
+          message: 'User created successfully with custodial wallet',
+          user: {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            address: walletInfo.address,
+            walletType: 'CUSTODIAL'
+          }
+        },
+        { status: 201 }
+      )
+    } catch (walletError) {
+      console.error('⚠️ Wallet initialization failed:', walletError)
+      
+      // User is created but wallet failed - still return success
+      // They can retry wallet creation later
+      return NextResponse.json(
+        { 
+          message: 'User created successfully (wallet initialization pending)',
+          user: {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role
+          },
+          warning: 'Wallet will be created on first use'
+        },
+        { status: 201 }
+      )
+    }
   } catch (error) {
     console.error('Sign up error:', error)
     return NextResponse.json(

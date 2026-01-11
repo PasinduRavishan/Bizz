@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { hashCommitment, generateNonce } from '@/lib/crypto'
 import { prisma } from '@/lib/prisma'
+import { getUserWallet } from '@/lib/wallet-service'
 
 export const runtime = 'nodejs'
 
@@ -66,7 +67,6 @@ export async function POST(request: NextRequest) {
     console.log('📝 Deploying QuizAttempt contract from API route...')
     console.log('📋 Attempt Details:')
     console.log('  Student ID:', session.user.id)
-    console.log('  Student Public Key:', body.studentPublicKey?.substring(0, 20) + '...' || 'None (using session)')
     console.log('  Quiz Rev:', body.quizContractRev.substring(0, 20) + '...')
     console.log('  Answers:', body.answers.length)
     console.log('  Entry Fee:', body.entryFee, 'sats')
@@ -80,32 +80,23 @@ export async function POST(request: NextRequest) {
     // @ts-expect-error - Dynamic import for Bitcoin Computer
     const { Computer } = await import('@bitcoin-computer/lib')
 
-    const computer = new Computer({
-      chain: (process.env.NEXT_PUBLIC_BITCOIN_COMPUTER_CHAIN || 'LTC') as 'LTC',
-      network: (process.env.NEXT_PUBLIC_BITCOIN_COMPUTER_NETWORK || 'regtest') as 'regtest',
-      url: process.env.NEXT_PUBLIC_BITCOIN_COMPUTER_URL || 'https://rltc.node.bitcoincomputer.io',
-      ...(process.env.BITCOIN_COMPUTER_MNEMONIC && { mnemonic: process.env.BITCOIN_COMPUTER_MNEMONIC })
-    })
+    // Get student's custodial wallet
+    console.log('🔑 Getting student custodial wallet...')
+    const computer = await getUserWallet(session.user.id)
+    const studentPublicKey = computer.getPublicKey()
 
-    console.log('🔑 Server wallet address:', computer.getAddress())
+    console.log('🔑 Student wallet address:', computer.getAddress())
 
     // Check balance
     const { balance } = await computer.getBalance()
-    console.log('💰 Server wallet balance:', balance.toString(), 'sats')
+    console.log('💰 Student wallet balance:', balance.toString(), 'sats')
 
     const requiredBalance = body.entryFee + 200000 // Entry fee + gas
     if (balance < BigInt(requiredBalance)) {
-      // Try to fund from faucet (regtest only)
-      if (process.env.NEXT_PUBLIC_BITCOIN_COMPUTER_NETWORK === 'regtest') {
-        console.log('💸 Requesting funds from faucet...')
-        await computer.faucet(0.1e8)
-        console.log('✅ Faucet funded wallet')
-      } else {
-        return NextResponse.json(
-          { success: false, error: `Server wallet has insufficient balance. Need ${requiredBalance} sats, have ${balance} sats` },
-          { status: 500 }
-        )
-      }
+      return NextResponse.json(
+        { success: false, error: `Insufficient balance. Need ${requiredBalance} sats, have ${balance} sats. Please contact support to add funds.` },
+        { status: 400 }
+      )
     }
 
     // Define QuizAttempt contract inline (pure JavaScript, no imports)
@@ -190,9 +181,6 @@ export async function POST(request: NextRequest) {
 
     console.log('📝 Creating attempt instance from module...')
 
-    // Use studentPublicKey from wallet if provided, otherwise use server wallet as placeholder
-    const studentPublicKey = body.studentPublicKey || computer.getPublicKey()
-
     const { tx, effect } = await computer.encode({
       mod: moduleSpecifier,
       exp: `new QuizAttempt("${studentPublicKey}", "${body.quizContractRev}", "${answerCommitment}", BigInt(${body.entryFee}))`
@@ -217,13 +205,13 @@ export async function POST(request: NextRequest) {
         throw new Error('Student user not found')
       }
 
-      // Update user's publicKey if provided and not already set
-      if (body.studentPublicKey && !student.publicKey) {
+      // Update user's publicKey if not already set
+      if (!student.publicKey) {
         await prisma.user.update({
           where: { id: student.id },
           data: {
-            publicKey: body.studentPublicKey,
-            address: body.studentPublicKey.substring(0, 40)
+            publicKey: studentPublicKey,
+            address: computer.getAddress()
           }
         })
         console.log('👤 Updated student wallet info')

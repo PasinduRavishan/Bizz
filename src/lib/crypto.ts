@@ -108,3 +108,51 @@ export function verifyAnswerHash(
   const computed = hashAnswer(quizId, index, answer, salt)
   return computed === expectedHash
 }
+
+/**
+ * Wallet Encryption/Decryption for Custodial Wallets
+ * 
+ * Uses AES-256 encryption to securely store user mnemonics
+ */
+
+/**
+ * Encrypt a mnemonic phrase for storage
+ * 
+ * @param mnemonic - BIP39 mnemonic phrase
+ * @param encryptionKey - Encryption key from environment
+ * @returns Encrypted string
+ */
+export function encryptMnemonic(mnemonic: string, encryptionKey: string): string {
+  if (!encryptionKey || encryptionKey.length < 32) {
+    throw new Error('Encryption key must be at least 32 characters')
+  }
+  
+  const encrypted = CryptoJS.AES.encrypt(mnemonic, encryptionKey)
+  return encrypted.toString()
+}
+
+/**
+ * Decrypt a mnemonic phrase from storage
+ * 
+ * @param encryptedMnemonic - Encrypted mnemonic string
+ * @param encryptionKey - Encryption key from environment
+ * @returns Decrypted mnemonic phrase
+ */
+export function decryptMnemonic(encryptedMnemonic: string, encryptionKey: string): string {
+  if (!encryptionKey || encryptionKey.length < 32) {
+    throw new Error('Encryption key must be at least 32 characters')
+  }
+  
+  try {
+    const decrypted = CryptoJS.AES.decrypt(encryptedMnemonic, encryptionKey)
+    const mnemonic = decrypted.toString(CryptoJS.enc.Utf8)
+    
+    if (!mnemonic) {
+      throw new Error('Decryption failed - invalid key or corrupted data')
+    }
+    
+    return mnemonic
+  } catch (error) {
+    throw new Error('Failed to decrypt mnemonic: ' + (error instanceof Error ? error.message : 'Unknown error'))
+  }
+}

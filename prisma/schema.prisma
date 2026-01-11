@@ -27,6 +27,12 @@ model User {
   publicKey     String?  @unique
   address       String?  @unique
   
+  // Custodial wallet fields (NEW)
+  encryptedMnemonic String?  // Encrypted BIP39 mnemonic for user's wallet
+  walletType        String   @default("CUSTODIAL") // 'CUSTODIAL' | 'CONNECTED' | 'NONE'
+  walletBalance     BigInt   @default(0) // Cached balance in satoshis
+  lastBalanceCheck  DateTime? // Last time balance was updated
+  
   role          Role     @default(STUDENT)
   
   // Stats

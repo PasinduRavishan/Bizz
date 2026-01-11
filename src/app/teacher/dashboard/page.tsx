@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
+import { WalletBalance } from '@/components/wallet/WalletBalance'
 
 interface Quiz {
   id: string
@@ -104,6 +105,11 @@ export default function TeacherDashboard() {
         <Link href="/teacher/create">
           <Button size="lg">+ Create New Quiz</Button>
         </Link>
+      </div>
+
+      {/* Wallet Balance */}
+      <div className="mb-8">
+        <WalletBalance />
       </div>
 
       {/* Stats Cards */}

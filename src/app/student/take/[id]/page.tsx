@@ -6,7 +6,6 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { useWallet } from '@/contexts/WalletContext'
 import { submitAttempt } from '@/services/attempt-service'
 import { getQuestionsLocally } from '@/lib/ipfs'
 
@@ -37,7 +36,6 @@ type CurrentStep = 'loading' | 'confirm' | 'taking' | 'submitting' | 'complete' 
 export default function TakeQuizPage() {
   const params = useParams()
   const quizId = params.id as string
-  const { connected, balance, publicKey } = useWallet()
 
   const [quiz, setQuiz] = useState<Quiz | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
@@ -117,28 +115,12 @@ export default function TakeQuizPage() {
   }
 
   const handleStartQuiz = async () => {
-    if (!connected || !publicKey) {
-      setError('Please connect your wallet first')
-      return
-    }
-
     if (!quiz) return
-
-    const entryFee = parseInt(quiz.entryFee)
-    const requiredBalance = entryFee + 100000 // Entry fee + gas estimate
-
-    if (balance < BigInt(requiredBalance)) {
-      setError(
-        `Insufficient balance. You need at least ${requiredBalance.toLocaleString()} sats. Current: ${balance.toString()} sats`
-      )
-      return
-    }
-
     setCurrentStep('taking')
   }
 
   const handleSubmit = async () => {
-    if (!quiz || !publicKey) return
+    if (!quiz) return
 
     setCurrentStep('submitting')
     setError(null)
@@ -154,8 +136,7 @@ export default function TakeQuizPage() {
         quizId: quiz.contractId,
         quizRev: quiz.contractRev,
         answers: answerStrings,
-        entryFee: parseInt(quiz.entryFee),
-        studentPublicKey: publicKey
+        entryFee: parseInt(quiz.entryFee)
       })
 
       if (result.success && result.attemptId) {
@@ -218,25 +199,6 @@ export default function TakeQuizPage() {
     return (
       <div>
         <main className="container mx-auto px-4 py-8 max-w-3xl">
-          {/* Wallet Warning */}
-          {!connected && (
-            <Card className="mb-6 border-yellow-500">
-              <CardBody className="bg-yellow-50 dark:bg-yellow-900/20">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">⚠️</span>
-                  <div>
-                    <p className="font-medium text-yellow-800 dark:text-yellow-200">
-                      Wallet Not Connected
-                    </p>
-                    <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                      Please connect your wallet to take this quiz.
-                    </p>
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
-          )}
-
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -281,20 +243,6 @@ export default function TakeQuizPage() {
                   </div>
                 </div>
               </div>
-
-              {/* Balance Info */}
-              {connected && (
-                <div className="bg-gray-100 dark:bg-zinc-800 rounded-lg p-4 text-sm">
-                  <p className="text-gray-600 dark:text-gray-400">
-                    <strong>Your Balance:</strong> {formatSatoshis(balance.toString())} LTC (
-                    {balance.toString()} sats)
-                  </p>
-                  <p className="text-gray-600 dark:text-gray-400 mt-1">
-                    <strong>Required:</strong> {formatSatoshis(parseInt(quiz.entryFee) + 100000)} LTC
-                    (entry fee + gas)
-                  </p>
-                </div>
-              )}
 
               {/* Rules */}
               <div>
@@ -348,10 +296,8 @@ export default function TakeQuizPage() {
                     Cancel
                   </Button>
                 </Link>
-                <Button onClick={handleStartQuiz} className="flex-1" disabled={!connected}>
-                  {connected
-                    ? `Pay ${formatSatoshis(quiz.entryFee)} LTC & Start`
-                    : 'Connect Wallet to Start'}
+                <Button onClick={handleStartQuiz} className="flex-1">
+                  Pay {formatSatoshis(quiz.entryFee)} LTC & Start
                 </Button>
               </div>
             </CardBody>

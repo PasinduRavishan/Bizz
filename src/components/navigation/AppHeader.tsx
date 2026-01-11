@@ -3,13 +3,10 @@
 import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { useWallet } from '@/contexts/WalletContext'
-import { WalletConnect } from '@/components/wallet/WalletConnect'
 import { Button } from '@/components/ui/Button'
 
 export function AppHeader() {
   const { data: session } = useSession()
-  const { connected } = useWallet()
   const router = useRouter()
 
   const handleLogout = async () => {
@@ -43,14 +40,13 @@ export function AppHeader() {
 
         {/* Navigation - Empty for cleaner UI, logo goes to dashboard */}
 
-        {/* Wallet & Logout */}
+        {/* User & Logout */}
         <div className="flex items-center gap-2">
           {session && (
             <span className="hidden sm:inline text-sm text-gray-600 dark:text-gray-400">
               {session.user.name}
             </span>
           )}
-          <WalletConnect />
           {session && (
             <Button variant="outline" size="sm" onClick={handleLogout}>
               Logout
