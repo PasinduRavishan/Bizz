@@ -1,107 +1,107 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { WalletConnect } from '@/components/wallet/WalletConnect'
+import { useWallet } from '@/contexts/WalletContext'
+import { submitAttempt } from '@/services/attempt-service'
+import { getQuestionsLocally } from '@/lib/ipfs'
 
-// Mock quiz data
-const mockQuizData: Record<string, {
+interface Quiz {
   id: string
-  title: string
-  teacher: string
-  questions: Array<{
-    id: number
-    question: string
-    options: string[]
-  }>
-  prizePool: number
-  entryFee: number
+  contractId: string
+  contractRev: string
+  title: string | null
+  questionCount: number
+  prizePool: string
+  entryFee: string
   passThreshold: number
+  status: string
   deadline: string
-}> = {
-  '1': {
-    id: '1',
-    title: 'JavaScript Basics',
-    teacher: 'Alice',
-    questions: [
-      {
-        id: 1,
-        question: 'What is the result of: typeof null?',
-        options: ['null', 'undefined', 'object', 'number']
-      },
-      {
-        id: 2,
-        question: 'Which method is used to add elements to the end of an array?',
-        options: ['push()', 'pop()', 'shift()', 'unshift()']
-      },
-      {
-        id: 3,
-        question: 'What does "===" check in JavaScript?',
-        options: ['Value only', 'Type only', 'Value and type', 'Reference']
-      },
-      {
-        id: 4,
-        question: 'Which keyword is used to declare a constant?',
-        options: ['var', 'let', 'const', 'static']
-      },
-      {
-        id: 5,
-        question: 'What is a closure in JavaScript?',
-        options: [
-          'A function with access to its own scope',
-          'A function with access to outer function scope',
-          'A closed function',
-          'An IIFE'
-        ]
-      }
-    ],
-    prizePool: 50000,
-    entryFee: 5000,
-    passThreshold: 70,
-    deadline: new Date(Date.now() + 86400000 * 2).toISOString()
-  },
-  '2': {
-    id: '2',
-    title: 'Bitcoin Fundamentals',
-    teacher: 'Bob',
-    questions: [
-      {
-        id: 1,
-        question: 'Who created Bitcoin?',
-        options: ['Vitalik Buterin', 'Satoshi Nakamoto', 'Hal Finney', 'Nick Szabo']
-      },
-      {
-        id: 2,
-        question: 'What is the maximum supply of Bitcoin?',
-        options: ['21 million', '100 million', '1 billion', 'Unlimited']
-      }
-    ],
-    prizePool: 100000,
-    entryFee: 10000,
-    passThreshold: 80,
-    deadline: new Date(Date.now() + 86400000 * 5).toISOString()
+  teacher: {
+    address: string
   }
 }
+
+interface Question {
+  question: string
+  options: string[]
+  correctAnswer?: number // Only available for locally stored quizzes
+}
+
+type CurrentStep = 'loading' | 'confirm' | 'taking' | 'submitting' | 'complete' | 'error'
 
 export default function TakeQuizPage() {
   const params = useParams()
   const quizId = params.id as string
-  const quiz = mockQuizData[quizId]
+  const { connected, balance, publicKey } = useWallet()
 
-  const [currentStep, setCurrentStep] = useState<'confirm' | 'taking' | 'submitting' | 'complete'>('confirm')
+  const [quiz, setQuiz] = useState<Quiz | null>(null)
+  const [questions, setQuestions] = useState<Question[]>([])
+  const [currentStep, setCurrentStep] = useState<CurrentStep>('loading')
   const [answers, setAnswers] = useState<Record<number, number>>({})
   const [timeLeft, setTimeLeft] = useState(3600)
+  const [error, setError] = useState<string | null>(null)
+  const [attemptId, setAttemptId] = useState<string | null>(null)
+
+  // Fetch quiz data from API
+  const fetchQuiz = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/quizzes?id=${quizId}`)
+      const data = await response.json()
+
+      if (data.success && data.data && data.data.length > 0) {
+        const quizData = data.data[0]
+        setQuiz(quizData)
+
+        // Try to get questions from local storage
+        const localQuestions = getQuestionsLocally(quizData.contractId)
+        if (localQuestions) {
+          // Remove correctAnswer for taking - students shouldn't see it
+          const questionsForTaking = localQuestions.map((q) => ({
+            question: q.question,
+            options: q.options
+          }))
+          setQuestions(questionsForTaking)
+        } else {
+          // Generate placeholder questions based on question count
+          // In production, fetch from IPFS using questionHashIPFS
+          const placeholderQuestions: Question[] = Array.from(
+            { length: quizData.questionCount },
+            (_, i) => ({
+              question: `Question ${i + 1} (Loading from IPFS...)`,
+              options: ['Option A', 'Option B', 'Option C', 'Option D']
+            })
+          )
+          setQuestions(placeholderQuestions)
+        }
+
+        setCurrentStep('confirm')
+      } else {
+        setError('Quiz not found')
+        setCurrentStep('error')
+      }
+    } catch (err) {
+      console.error('Error fetching quiz:', err)
+      setError('Failed to load quiz')
+      setCurrentStep('error')
+    }
+  }, [quizId])
+
+  useEffect(() => {
+    fetchQuiz()
+  }, [fetchQuiz])
 
   // Timer countdown effect
   useEffect(() => {
     if (currentStep !== 'taking') return
-    
+
     const interval = setInterval(() => {
-      setTimeLeft(prev => {
+      setTimeLeft((prev) => {
         if (prev <= 0) {
           clearInterval(interval)
           return 0
@@ -109,17 +109,102 @@ export default function TakeQuizPage() {
         return prev - 1
       })
     }, 1000)
-    
+
     return () => clearInterval(interval)
   }, [currentStep])
 
-  if (!quiz) {
+  const handleAnswer = (questionIndex: number, optionIndex: number) => {
+    setAnswers((prev) => ({ ...prev, [questionIndex]: optionIndex }))
+  }
+
+  const handleStartQuiz = async () => {
+    if (!connected || !publicKey) {
+      setError('Please connect your wallet first')
+      return
+    }
+
+    if (!quiz) return
+
+    const entryFee = parseInt(quiz.entryFee)
+    const requiredBalance = entryFee + 100000 // Entry fee + gas estimate
+
+    if (balance < BigInt(requiredBalance)) {
+      setError(
+        `Insufficient balance. You need at least ${requiredBalance.toLocaleString()} sats. Current: ${balance.toString()} sats`
+      )
+      return
+    }
+
+    setCurrentStep('taking')
+  }
+
+  const handleSubmit = async () => {
+    if (!quiz || !publicKey) return
+
+    setCurrentStep('submitting')
+    setError(null)
+
+    try {
+      // Convert answers to string array (option text)
+      const answerStrings = questions.map((q, index) => {
+        const selectedOption = answers[index]
+        return selectedOption !== undefined ? q.options[selectedOption] : ''
+      })
+
+      const result = await submitAttempt({
+        quizId: quiz.contractId,
+        quizRev: quiz.contractRev,
+        answers: answerStrings,
+        entryFee: parseInt(quiz.entryFee),
+        studentPublicKey: publicKey
+      })
+
+      if (result.success && result.attemptId) {
+        setAttemptId(result.attemptId)
+        setCurrentStep('complete')
+      } else {
+        setError(result.error || 'Failed to submit attempt')
+        setCurrentStep('error')
+      }
+    } catch (err) {
+      console.error('Submit error:', err)
+      setError(err instanceof Error ? err.message : 'Failed to submit')
+      setCurrentStep('error')
+    }
+  }
+
+  const allAnswered = Object.keys(answers).length === questions.length && questions.length > 0
+
+  const formatSatoshis = (sats: string | number) => {
+    const num = typeof sats === 'string' ? parseInt(sats) : sats
+    return (num / 100000000).toFixed(5)
+  }
+
+  // Loading State
+  if (currentStep === 'loading') {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-zinc-900 flex items-center justify-center">
-        <Card>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading quiz...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Error State
+  if (currentStep === 'error' || !quiz) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-zinc-900 flex items-center justify-center">
+        <Card className="max-w-md">
           <CardBody className="text-center py-12">
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Quiz Not Found</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">This quiz doesn&apos;t exist or has been removed</p>
+            <div className="text-5xl mb-4">❌</div>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+              {error || 'Quiz Not Found'}
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              {error || "This quiz doesn't exist or has been removed"}
+            </p>
             <Link href="/student/browse">
               <Button>Back to Browse</Button>
             </Link>
@@ -129,30 +214,6 @@ export default function TakeQuizPage() {
     )
   }
 
-  const handleAnswer = (questionId: number, optionIndex: number) => {
-    setAnswers(prev => ({ ...prev, [questionId]: optionIndex }))
-  }
-
-  const handleStartQuiz = async () => {
-    // TODO: Pay entry fee via Bitcoin Computer
-    console.log('Paying entry fee:', quiz.entryFee)
-    setCurrentStep('taking')
-  }
-
-  const handleSubmit = async () => {
-    setCurrentStep('submitting')
-    
-    // TODO: Create commitment hash and submit to blockchain
-    console.log('Submitting answers:', answers)
-    
-    // Simulate blockchain transaction
-    setTimeout(() => {
-      setCurrentStep('complete')
-    }, 2000)
-  }
-
-  const allAnswered = Object.keys(answers).length === quiz.questions.length
-
   // Confirm Step
   if (currentStep === 'confirm') {
     return (
@@ -160,22 +221,49 @@ export default function TakeQuizPage() {
         <header className="border-b bg-white dark:bg-zinc-800">
           <div className="container mx-auto px-4 py-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Link href="/" className="text-2xl font-bold text-blue-600">Bizz</Link>
-              <span className="text-gray-400">→</span>
-              <span className="text-gray-700 dark:text-gray-300">{quiz.title}</span>
+              <Link href="/" className="text-2xl font-bold text-blue-600">
+                Bizz
+              </Link>
+              <span className="text-gray-400">&rarr;</span>
+              <span className="text-gray-700 dark:text-gray-300">
+                {quiz.title || 'Take Quiz'}
+              </span>
             </div>
             <WalletConnect />
           </div>
         </header>
 
         <main className="container mx-auto px-4 py-8 max-w-3xl">
+          {/* Wallet Warning */}
+          {!connected && (
+            <Card className="mb-6 border-yellow-500">
+              <CardBody className="bg-yellow-50 dark:bg-yellow-900/20">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">⚠️</span>
+                  <div>
+                    <p className="font-medium text-yellow-800 dark:text-yellow-200">
+                      Wallet Not Connected
+                    </p>
+                    <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                      Please connect your wallet to take this quiz.
+                    </p>
+                  </div>
+                </div>
+              </CardBody>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{quiz.title}</h1>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {quiz.title || `Quiz ${quiz.contractId.slice(0, 8)}...`}
+                </h1>
                 <Badge variant="success">ACTIVE</Badge>
               </div>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">by {quiz.teacher}</p>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">
+                by {quiz.teacher?.address?.slice(0, 8)}...{quiz.teacher?.address?.slice(-6)}
+              </p>
             </CardHeader>
 
             <CardBody className="space-y-6">
@@ -185,22 +273,44 @@ export default function TakeQuizPage() {
                 <div className="grid md:grid-cols-2 gap-4 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-400">Questions:</span>
-                    <span className="font-semibold text-gray-900 dark:text-white">{quiz.questions.length}</span>
+                    <span className="font-semibold text-gray-900 dark:text-white">
+                      {quiz.questionCount}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-400">Pass Threshold:</span>
-                    <span className="font-semibold text-gray-900 dark:text-white">{quiz.passThreshold}%</span>
+                    <span className="font-semibold text-gray-900 dark:text-white">
+                      {quiz.passThreshold}%
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-400">Prize Pool:</span>
-                    <span className="font-semibold text-green-600">{(quiz.prizePool / 100000000).toFixed(5)} LTC</span>
+                    <span className="font-semibold text-green-600">
+                      {formatSatoshis(quiz.prizePool)} LTC
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-400">Entry Fee:</span>
-                    <span className="font-semibold text-gray-900 dark:text-white">{(quiz.entryFee / 100000000).toFixed(5)} LTC</span>
+                    <span className="font-semibold text-gray-900 dark:text-white">
+                      {formatSatoshis(quiz.entryFee)} LTC
+                    </span>
                   </div>
                 </div>
               </div>
+
+              {/* Balance Info */}
+              {connected && (
+                <div className="bg-gray-100 dark:bg-zinc-800 rounded-lg p-4 text-sm">
+                  <p className="text-gray-600 dark:text-gray-400">
+                    <strong>Your Balance:</strong> {formatSatoshis(balance.toString())} LTC (
+                    {balance.toString()} sats)
+                  </p>
+                  <p className="text-gray-600 dark:text-gray-400 mt-1">
+                    <strong>Required:</strong> {formatSatoshis(parseInt(quiz.entryFee) + 100000)} LTC
+                    (entry fee + gas)
+                  </p>
+                </div>
+              )}
 
               {/* Rules */}
               <div>
@@ -216,15 +326,18 @@ export default function TakeQuizPage() {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-blue-600">3.</span>
-                    <span>Your answers are hashed and committed to the blockchain (commit phase)</span>
+                    <span>Your answers are hashed and committed to the blockchain</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-blue-600">4.</span>
-                    <span>After the deadline, reveal your answers (reveal phase)</span>
+                    <span>After the deadline, reveal your answers</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-blue-600">5.</span>
-                    <span>If you score ≥{quiz.passThreshold}%, you&apos;ll win a share of the prize pool!</span>
+                    <span>
+                      If you score &ge;{quiz.passThreshold}%, you&apos;ll win a share of the prize
+                      pool!
+                    </span>
                   </li>
                 </ul>
               </div>
@@ -232,17 +345,29 @@ export default function TakeQuizPage() {
               {/* Warning */}
               <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4">
                 <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                  ⚠️ Entry fee is non-refundable. Make sure to reveal your answers after the deadline or you&apos;ll forfeit your entry.
+                  ⚠️ Entry fee is non-refundable. Make sure to reveal your answers after the
+                  deadline or you&apos;ll forfeit your entry.
                 </p>
               </div>
+
+              {/* Error */}
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4">
+                  <p className="text-sm text-red-800 dark:text-red-200">❌ {error}</p>
+                </div>
+              )}
 
               {/* Actions */}
               <div className="flex gap-4">
                 <Link href="/student/browse" className="flex-1">
-                  <Button variant="outline" className="w-full">Cancel</Button>
+                  <Button variant="outline" className="w-full">
+                    Cancel
+                  </Button>
                 </Link>
-                <Button onClick={handleStartQuiz} className="flex-1">
-                  Pay {(quiz.entryFee / 100000000).toFixed(5)} LTC & Start
+                <Button onClick={handleStartQuiz} className="flex-1" disabled={!connected}>
+                  {connected
+                    ? `Pay ${formatSatoshis(quiz.entryFee)} LTC & Start`
+                    : 'Connect Wallet to Start'}
                 </Button>
               </div>
             </CardBody>
@@ -260,9 +385,11 @@ export default function TakeQuizPage() {
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white">{quiz.title}</h1>
+                <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+                  {quiz.title || 'Quiz'}
+                </h1>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {Object.keys(answers).length} of {quiz.questions.length} answered
+                  {Object.keys(answers).length} of {questions.length} answered
                 </p>
               </div>
               <div className="text-right">
@@ -277,8 +404,8 @@ export default function TakeQuizPage() {
 
         <main className="container mx-auto px-4 py-8 max-w-4xl">
           <div className="space-y-6">
-            {quiz.questions.map((q, index) => (
-              <Card key={q.id}>
+            {questions.map((q, index) => (
+              <Card key={index}>
                 <CardHeader>
                   <div className="flex items-start gap-3">
                     <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0">
@@ -294,24 +421,28 @@ export default function TakeQuizPage() {
                     {q.options.map((option, optionIndex) => (
                       <button
                         key={optionIndex}
-                        onClick={() => handleAnswer(q.id, optionIndex)}
+                        onClick={() => handleAnswer(index, optionIndex)}
                         className={`
                           w-full text-left px-4 py-3 rounded-lg border-2 transition-all
-                          ${answers[q.id] === optionIndex
-                            ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20'
-                            : 'border-gray-200 dark:border-zinc-700 hover:border-blue-300'
+                          ${
+                            answers[index] === optionIndex
+                              ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20'
+                              : 'border-gray-200 dark:border-zinc-700 hover:border-blue-300'
                           }
                         `}
                       >
                         <div className="flex items-center gap-3">
-                          <div className={`
+                          <div
+                            className={`
                             w-5 h-5 rounded-full border-2 flex items-center justify-center
-                            ${answers[q.id] === optionIndex
-                              ? 'border-blue-600 bg-blue-600'
-                              : 'border-gray-300 dark:border-zinc-600'
+                            ${
+                              answers[index] === optionIndex
+                                ? 'border-blue-600 bg-blue-600'
+                                : 'border-gray-300 dark:border-zinc-600'
                             }
-                          `}>
-                            {answers[q.id] === optionIndex && (
+                          `}
+                          >
+                            {answers[index] === optionIndex && (
                               <div className="w-2 h-2 bg-white rounded-full" />
                             )}
                           </div>
@@ -328,13 +459,10 @@ export default function TakeQuizPage() {
           {/* Submit Button */}
           <div className="sticky bottom-0 bg-white dark:bg-zinc-800 border-t mt-8 -mx-4 px-4 py-4">
             <div className="container mx-auto max-w-4xl">
-              <Button
-                onClick={handleSubmit}
-                disabled={!allAnswered}
-                size="lg"
-                className="w-full"
-              >
-                {allAnswered ? 'Submit Answers' : `Answer all questions (${Object.keys(answers).length}/${quiz.questions.length})`}
+              <Button onClick={handleSubmit} disabled={!allAnswered} size="lg" className="w-full">
+                {allAnswered
+                  ? 'Submit Answers to Blockchain'
+                  : `Answer all questions (${Object.keys(answers).length}/${questions.length})`}
               </Button>
             </div>
           </div>
@@ -356,6 +484,9 @@ export default function TakeQuizPage() {
             <p className="text-gray-600 dark:text-gray-400">
               Creating commitment hash and broadcasting transaction...
             </p>
+            <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">
+              This may take 30-60 seconds
+            </p>
           </CardBody>
         </Card>
       </div>
@@ -373,9 +504,14 @@ export default function TakeQuizPage() {
           <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
             Answers Submitted Successfully!
           </h3>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Your answers have been committed to the blockchain. Remember to reveal them after the deadline!
+          <p className="text-gray-600 dark:text-gray-400 mb-2">
+            Your answers have been committed to the blockchain.
           </p>
+          {attemptId && (
+            <p className="text-sm text-gray-500 dark:text-gray-500 font-mono mb-6">
+              Attempt ID: {attemptId.substring(0, 20)}...
+            </p>
+          )}
 
           <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-6 mb-6 text-left">
             <h4 className="font-bold text-gray-900 dark:text-white mb-3">Next Steps:</h4>
@@ -399,9 +535,18 @@ export default function TakeQuizPage() {
             </ul>
           </div>
 
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4 mb-6">
+            <p className="text-sm text-yellow-800 dark:text-yellow-200">
+              ⚠️ <strong>Important:</strong> Your answers are stored locally. Don&apos;t clear your
+              browser data until you&apos;ve revealed your answers!
+            </p>
+          </div>
+
           <div className="flex gap-4">
             <Link href="/student/my-attempts" className="flex-1">
-              <Button variant="outline" className="w-full">View My Attempts</Button>
+              <Button variant="outline" className="w-full">
+                View My Attempts
+              </Button>
             </Link>
             <Link href="/student/browse" className="flex-1">
               <Button className="w-full">Browse More Quizzes</Button>
