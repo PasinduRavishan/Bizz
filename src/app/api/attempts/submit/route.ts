@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { hashCommitment, generateNonce } from '@/lib/crypto'
 import { prisma } from '@/lib/prisma'
 
 export const runtime = 'nodejs'
 
 interface SubmitAttemptRequest {
-  studentPublicKey: string
+  studentPublicKey?: string // Optional - from wallet if connected
   quizContractId: string
   quizContractRev: string
   answers: string[]
@@ -21,16 +23,25 @@ interface SubmitAttemptRequest {
  */
 export async function POST(request: NextRequest) {
   try {
-    const body: SubmitAttemptRequest = await request.json()
-
-    // Validation
-    if (!body.studentPublicKey) {
+    // Check authentication
+    const session = await getServerSession(authOptions)
+    if (!session || !session.user) {
       return NextResponse.json(
-        { success: false, error: 'Student public key is required' },
-        { status: 400 }
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
       )
     }
 
+    if (session.user.role !== 'STUDENT') {
+      return NextResponse.json(
+        { success: false, error: 'Only students can submit quiz attempts' },
+        { status: 403 }
+      )
+    }
+
+    const body: SubmitAttemptRequest = await request.json()
+
+    // Validation
     if (!body.quizContractRev) {
       return NextResponse.json(
         { success: false, error: 'Quiz contract revision is required' },
@@ -54,7 +65,8 @@ export async function POST(request: NextRequest) {
 
     console.log('📝 Deploying QuizAttempt contract from API route...')
     console.log('📋 Attempt Details:')
-    console.log('  Student:', body.studentPublicKey.substring(0, 20) + '...')
+    console.log('  Student ID:', session.user.id)
+    console.log('  Student Public Key:', body.studentPublicKey?.substring(0, 20) + '...' || 'None (using session)')
     console.log('  Quiz Rev:', body.quizContractRev.substring(0, 20) + '...')
     console.log('  Answers:', body.answers.length)
     console.log('  Entry Fee:', body.entryFee, 'sats')
@@ -178,9 +190,12 @@ export async function POST(request: NextRequest) {
 
     console.log('📝 Creating attempt instance from module...')
 
+    // Use studentPublicKey from wallet if provided, otherwise use server wallet as placeholder
+    const studentPublicKey = body.studentPublicKey || computer.getPublicKey()
+
     const { tx, effect } = await computer.encode({
       mod: moduleSpecifier,
-      exp: `new QuizAttempt("${body.studentPublicKey}", "${body.quizContractRev}", "${answerCommitment}", BigInt(${body.entryFee}))`
+      exp: `new QuizAttempt("${studentPublicKey}", "${body.quizContractRev}", "${answerCommitment}", BigInt(${body.entryFee}))`
     })
 
     const txId = await computer.broadcast(tx)
@@ -193,20 +208,25 @@ export async function POST(request: NextRequest) {
 
     // Save to database immediately (don't wait for indexer)
     try {
-      // Ensure student user exists
-      let student = await prisma.user.findUnique({
-        where: { publicKey: body.studentPublicKey }
+      // Use authenticated user from session
+      const student = await prisma.user.findUnique({
+        where: { id: session.user.id }
       })
 
       if (!student) {
-        student = await prisma.user.create({
+        throw new Error('Student user not found')
+      }
+
+      // Update user's publicKey if provided and not already set
+      if (body.studentPublicKey && !student.publicKey) {
+        await prisma.user.update({
+          where: { id: student.id },
           data: {
             publicKey: body.studentPublicKey,
-            address: computer.getAddress(), // Use server address as placeholder
-            role: 'STUDENT'
+            address: body.studentPublicKey.substring(0, 40)
           }
         })
-        console.log('👤 Created new user for student')
+        console.log('👤 Updated student wallet info')
       }
 
       // Find quiz by contractRev or contractId
@@ -224,7 +244,7 @@ export async function POST(request: NextRequest) {
           data: {
             contractId: attempt._id,
             contractRev: attempt._rev,
-            studentId: student.id,
+            studentId: session.user.id,
             quizId: quiz.id,
             answerCommitment: answerCommitment,
             status: 'COMMITTED',

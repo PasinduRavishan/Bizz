@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { generateSalt, hashAnswers } from '@/lib/crypto'
 import { uploadQuestionsToIPFS, storeQuestionsLocally } from '@/lib/ipfs'
 import { prisma } from '@/lib/prisma'
@@ -19,11 +21,27 @@ interface CreateQuizRequest {
   deadline: string
   title?: string
   description?: string
-  teacherPublicKey: string
+  teacherPublicKey?: string // Optional - from wallet if connected
 }
 
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const session = await getServerSession(authOptions)
+    if (!session || !session.user) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    if (session.user.role !== 'TEACHER') {
+      return NextResponse.json(
+        { success: false, error: 'Only teachers can create quizzes' },
+        { status: 403 }
+      )
+    }
+
     const body: CreateQuizRequest = await request.json()
 
     if (!body.questions || body.questions.length === 0) {
@@ -74,10 +92,14 @@ export async function POST(request: NextRequest) {
 
     console.log('🚀 Server wallet address:', computer.getAddress())
     console.log('🚀 Creating quiz contract...')
-    console.log('  Teacher:', body.teacherPublicKey.substring(0, 20) + '...')
+    console.log('  Teacher ID:', session.user.id)
+    console.log('  Teacher Public Key:', body.teacherPublicKey?.substring(0, 20) + '...' || 'None (using session)')
     console.log('  Questions:', body.questions.length)
     console.log('  Prize Pool:', body.prizePool, 'sats')
     console.log('  Entry Fee:', body.entryFee, 'sats')
+
+    // Use teacherPublicKey from wallet if provided, otherwise use server wallet as placeholder
+    const teacherPublicKey = body.teacherPublicKey || computer.getPublicKey()
 
     const salt = generateSalt()
     const tempQuizId = `quiz-${Date.now()}-${Math.random().toString(36).substring(7)}`
@@ -206,7 +228,7 @@ export async function POST(request: NextRequest) {
     
     const { tx, effect } = await computer.encode({
       mod: moduleSpecifier,
-      exp: `new Quiz("${body.teacherPublicKey}", "${questionHashIPFS}", ${JSON.stringify(answerHashes)}, BigInt(${body.prizePool}), BigInt(${body.entryFee}), ${body.passThreshold}, ${deadline.getTime()})`
+      exp: `new Quiz("${teacherPublicKey}", "${questionHashIPFS}", ${JSON.stringify(answerHashes)}, BigInt(${body.prizePool}), BigInt(${body.entryFee}), ${body.passThreshold}, ${deadline.getTime()})`
     })
 
     const txId = await computer.broadcast(tx)
@@ -221,20 +243,25 @@ export async function POST(request: NextRequest) {
 
     // Save to database immediately (don't wait for indexer)
     try {
-      // Ensure teacher user exists
-      let teacher = await prisma.user.findUnique({
-        where: { publicKey: body.teacherPublicKey }
+      // Use authenticated user from session
+      const teacher = await prisma.user.findUnique({
+        where: { id: session.user.id }
       })
 
       if (!teacher) {
-        teacher = await prisma.user.create({
+        throw new Error('Teacher user not found')
+      }
+
+      // Update user's publicKey if provided and not already set
+      if (body.teacherPublicKey && !teacher.publicKey) {
+        await prisma.user.update({
+          where: { id: teacher.id },
           data: {
             publicKey: body.teacherPublicKey,
-            address: body.teacherPublicKey.substring(0, 40),
-            role: 'TEACHER'
+            address: body.teacherPublicKey.substring(0, 40)
           }
         })
-        console.log('👤 Created new user for teacher')
+        console.log('👤 Updated teacher wallet info')
       }
 
       // Calculate reveal deadlines
@@ -245,7 +272,7 @@ export async function POST(request: NextRequest) {
         data: {
           contractId: quiz._id,
           contractRev: quiz._rev,
-          teacherId: teacher.id,
+          teacherId: session.user.id,
           title: body.title || null,
           questionHashIPFS: questionHashIPFS,
           answerHashes: answerHashes,

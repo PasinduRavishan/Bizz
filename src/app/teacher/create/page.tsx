@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
-import { WalletConnect } from '@/components/wallet/WalletConnect'
 import { useWallet } from '@/contexts/WalletContext'
 import { createQuiz } from '@/services/quiz-service'
 
@@ -59,21 +58,13 @@ export default function CreateQuizPage() {
   }
 
   const validateForm = (): string | null => {
-    if (!connected || !publicKey) {
-      return 'Please connect your wallet first'
+    // Remove wallet requirement - authentication is enough
+    if (!title.trim()) {
+      return 'Please enter a quiz title'
     }
 
     const prizePoolNum = parseInt(prizePool)
     const entryFeeNum = parseInt(entryFee)
-    const requiredBalance = prizePoolNum + 500000 // Prize pool + gas estimate
-
-    if (balance < BigInt(requiredBalance)) {
-      return `Insufficient balance. You need at least ${requiredBalance.toLocaleString()} sats (prize pool + gas). Current balance: ${balance.toString()} sats`
-    }
-
-    if (!title.trim()) {
-      return 'Please enter a quiz title'
-    }
 
     if (prizePoolNum < 10000) {
       return 'Prize pool must be at least 10,000 satoshis'
@@ -81,6 +72,14 @@ export default function CreateQuizPage() {
 
     if (entryFeeNum < 5000) {
       return 'Entry fee must be at least 5,000 satoshis'
+    }
+
+    // Only check balance if wallet is connected
+    if (connected && publicKey) {
+      const requiredBalance = prizePoolNum + 500000 // Prize pool + gas estimate
+      if (balance < BigInt(requiredBalance)) {
+        return `Insufficient wallet balance. You need at least ${requiredBalance.toLocaleString()} sats (prize pool + gas). Current balance: ${balance.toString()} sats. Note: You can still create the quiz using server wallet.`
+      }
     }
 
     if (!deadline) {
@@ -134,7 +133,7 @@ export default function CreateQuizPage() {
         passThreshold: parseInt(passThreshold),
         deadline: new Date(deadline),
         title: title.trim(),
-        teacherPublicKey: publicKey! // Pass public key to API
+        teacherPublicKey: publicKey || undefined // Pass public key only if wallet connected
       })
 
       if (result.success && result.quizId) {
@@ -160,42 +159,27 @@ export default function CreateQuizPage() {
   const isLoading = deploymentStep === 'validating' || deploymentStep === 'deploying'
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-zinc-900">
-      {/* Header */}
-      <header className="border-b bg-white dark:bg-zinc-800">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="text-2xl font-bold text-blue-600">
-              Bizz
-            </Link>
-            <span className="text-gray-400">&rarr;</span>
-            <span className="text-gray-700 dark:text-gray-300">Create Quiz</span>
-          </div>
-          <WalletConnect />
-        </div>
-      </header>
+    <main className="container mx-auto px-4 py-8 max-w-4xl">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Create New Quiz</h1>
+        <p className="text-gray-600 dark:text-gray-400">
+          Set up your quiz with prize pool and questions
+        </p>
+      </div>
 
-      <main className="container mx-auto px-4 py-8 max-w-4xl">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Create New Quiz</h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Set up your quiz with prize pool and questions
-          </p>
-        </div>
-
-        {/* Wallet Not Connected Warning */}
+        {/* Wallet Not Connected Info */}
         {!connected && (
-          <Card className="mb-6 border-yellow-500">
-            <CardBody className="bg-yellow-50 dark:bg-yellow-900/20">
+          <Card className="mb-6 border-blue-500">
+            <CardBody className="bg-blue-50 dark:bg-blue-900/20">
               <div className="flex items-center gap-3">
-                <span className="text-2xl">⚠️</span>
+                <span className="text-2xl">ℹ️</span>
                 <div>
-                  <p className="font-medium text-yellow-800 dark:text-yellow-200">
+                  <p className="font-medium text-blue-800 dark:text-blue-200">
                     Wallet Not Connected
                   </p>
-                  <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                    Please connect your wallet to create a quiz. You&apos;ll need enough LTC to cover
-                    the prize pool plus gas fees (~500,000 sats).
+                  <p className="text-sm text-blue-700 dark:text-blue-300">
+                    You can create a quiz without connecting your wallet. The server will handle the blockchain deployment.
+                    Connect your wallet later if you want to use your own funds for the prize pool.
                   </p>
                 </div>
               </div>
@@ -436,6 +420,5 @@ export default function CreateQuizPage() {
           </form>
         )}
       </main>
-    </div>
   )
 }

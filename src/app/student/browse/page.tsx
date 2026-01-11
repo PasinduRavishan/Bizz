@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { WalletConnect } from '@/components/wallet/WalletConnect'
 import { Input } from '@/components/ui/Input'
 
 interface Quiz {
@@ -89,65 +88,52 @@ export default function BrowseQuizzesPage() {
   const totalAttempts = quizzes.reduce((sum, q) => sum + (q._count?.attempts || 0), 0)
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-zinc-900">
-      {/* Header */}
-      <header className="border-b bg-white dark:bg-zinc-800">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="text-2xl font-bold text-blue-600">Bizz</Link>
-            <span className="text-gray-400">&rarr;</span>
-            <span className="text-gray-700 dark:text-gray-300">Browse Quizzes</span>
-          </div>
-          <WalletConnect />
-        </div>
-      </header>
+    <main className="container mx-auto px-4 py-8 max-w-6xl">
+      {/* Header Section */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Available Quizzes</h1>
+        <p className="text-gray-600 dark:text-gray-400">Choose a quiz to attempt and win Bitcoin</p>
+      </div>
 
-      <main className="container mx-auto px-4 py-8 max-w-6xl">
-        {/* Header Section */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Available Quizzes</h1>
-          <p className="text-gray-600 dark:text-gray-400">Choose a quiz to attempt and win Bitcoin</p>
-        </div>
+      {/* Search */}
+      <div className="mb-6">
+        <Input
+          placeholder="Search quizzes by title or teacher..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </div>
 
-        {/* Search */}
-        <div className="mb-6">
-          <Input
-            placeholder="Search quizzes by title or teacher..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
+      {/* Stats */}
+      <div className="grid md:grid-cols-3 gap-4 mb-8">
+        <Card>
+          <CardBody>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Active Quizzes</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">
+              {loading ? '...' : quizzes.length}
+            </div>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Total Prize Pool</div>
+            <div className="text-2xl font-bold text-green-600">
+              {loading ? '...' : `${formatSatoshis(totalPrizePool)} LTC`}
+            </div>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Total Attempts</div>
+            <div className="text-2xl font-bold text-blue-600">
+              {loading ? '...' : totalAttempts}
+            </div>
+          </CardBody>
+        </Card>
+      </div>
 
-        {/* Stats */}
-        <div className="grid md:grid-cols-3 gap-4 mb-8">
-          <Card>
-            <CardBody>
-              <div className="text-sm text-gray-600 dark:text-gray-400">Active Quizzes</div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {loading ? '...' : quizzes.length}
-              </div>
-            </CardBody>
-          </Card>
-          <Card>
-            <CardBody>
-              <div className="text-sm text-gray-600 dark:text-gray-400">Total Prize Pool</div>
-              <div className="text-2xl font-bold text-green-600">
-                {loading ? '...' : `${formatSatoshis(totalPrizePool)} LTC`}
-              </div>
-            </CardBody>
-          </Card>
-          <Card>
-            <CardBody>
-              <div className="text-sm text-gray-600 dark:text-gray-400">Total Attempts</div>
-              <div className="text-2xl font-bold text-blue-600">
-                {loading ? '...' : totalAttempts}
-              </div>
-            </CardBody>
-          </Card>
-        </div>
-
-        {/* Loading State */}
-        {loading && (
+      {/* Loading State */}
+      {loading && (
           <div className="flex justify-center items-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
           </div>
@@ -252,6 +238,5 @@ export default function BrowseQuizzesPage() {
           </Card>
         )}
       </main>
-    </div>
   )
 }

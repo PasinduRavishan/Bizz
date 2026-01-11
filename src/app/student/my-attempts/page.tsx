@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { WalletConnect } from '@/components/wallet/WalletConnect'
 import { useWallet } from '@/contexts/WalletContext'
 
 interface Attempt {
@@ -102,22 +101,9 @@ export default function MyAttemptsPage() {
     : 0
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-zinc-900">
-      {/* Header */}
-      <header className="border-b bg-white dark:bg-zinc-800">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="text-2xl font-bold text-blue-600">Bizz</Link>
-            <span className="text-gray-400">&rarr;</span>
-            <span className="text-gray-700 dark:text-gray-300">My Attempts</span>
-          </div>
-          <WalletConnect />
-        </div>
-      </header>
-
-      <main className="container mx-auto px-4 py-8 max-w-5xl">
-        {/* Not Connected State */}
-        {!connected && (
+    <main className="container mx-auto px-4 py-8 max-w-5xl">
+      {/* Not Connected State */}
+      {!connected && (
           <Card>
             <CardBody className="text-center py-12">
               <div className="text-6xl mb-4">🔐</div>
@@ -283,6 +269,5 @@ export default function MyAttemptsPage() {
           </>
         )}
       </main>
-    </div>
   )
 }

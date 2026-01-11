@@ -19,7 +19,7 @@ export interface CreateQuizParams {
   deadline: Date
   title?: string
   description?: string
-  teacherPublicKey: string // Pass public key from wallet
+  teacherPublicKey?: string // Optional - only if wallet is connected
 }
 
 export interface CreateQuizResult {

@@ -14,11 +14,19 @@ datasource db {
 }
         
 
-// User model - tracks users by their public key
+// User model - tracks users with authentication and blockchain data
 model User {
   id            String   @id @default(cuid())
-  publicKey     String   @unique
-  address       String   @unique
+  
+  // Authentication fields
+  email         String?  @unique
+  name          String?
+  passwordHash  String?
+  
+  // Blockchain fields (optional - linked when wallet is connected)
+  publicKey     String?  @unique
+  address       String?  @unique
+  
   role          Role     @default(STUDENT)
   
   // Stats
@@ -33,6 +41,7 @@ model User {
   quizzes       Quiz[]
   attempts      QuizAttempt[]
   
+  @@index([email])
   @@index([publicKey])
   @@index([address])
 }

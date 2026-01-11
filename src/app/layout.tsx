@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import NetworkStatus from "@/components/NetworkStatus";
 import { WalletProvider } from "@/contexts/WalletContext";
+import { NextAuthProvider } from "@/components/providers/NextAuthProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,10 +30,12 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <WalletProvider>
-          {children}
-          {process.env.NODE_ENV === 'development' && <NetworkStatus />}
-        </WalletProvider>
+        <NextAuthProvider>
+          <WalletProvider>
+            {children}
+            {process.env.NODE_ENV === 'development' && <NetworkStatus />}
+          </WalletProvider>
+        </NextAuthProvider>
       </body>
     </html>
   );

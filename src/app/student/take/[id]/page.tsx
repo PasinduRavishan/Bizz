@@ -6,7 +6,6 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { WalletConnect } from '@/components/wallet/WalletConnect'
 import { useWallet } from '@/contexts/WalletContext'
 import { submitAttempt } from '@/services/attempt-service'
 import { getQuestionsLocally } from '@/lib/ipfs'
@@ -217,22 +216,7 @@ export default function TakeQuizPage() {
   // Confirm Step
   if (currentStep === 'confirm') {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-zinc-900">
-        <header className="border-b bg-white dark:bg-zinc-800">
-          <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link href="/" className="text-2xl font-bold text-blue-600">
-                Bizz
-              </Link>
-              <span className="text-gray-400">&rarr;</span>
-              <span className="text-gray-700 dark:text-gray-300">
-                {quiz.title || 'Take Quiz'}
-              </span>
-            </div>
-            <WalletConnect />
-          </div>
-        </header>
-
+      <div>
         <main className="container mx-auto px-4 py-8 max-w-3xl">
           {/* Wallet Warning */}
           {!connected && (

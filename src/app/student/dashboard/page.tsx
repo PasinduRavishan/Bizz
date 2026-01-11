@@ -7,35 +7,34 @@ import { Button } from '@/components/ui/Button'
 import { Card, CardBody } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 
-interface Quiz {
+interface QuizAttempt {
   id: string
-  contractId: string
-  title: string | null
-  description: string | null
-  questionCount: number
-  prizePool: string
-  entryFee: string
-  passThreshold: number
+  score: number
+  passed: boolean
   status: string
-  deadline: string
-  createdAt: string
-  _count: {
-    attempts: number
-    winners: number
+  submitTimestamp: string
+  prizeAmount: string | null
+  quiz: {
+    id: string
+    title: string | null
+    description: string | null
+    questionCount: number
+    passThreshold: number
+    status: string
   }
 }
 
 interface DashboardData {
-  quizzes: Quiz[]
+  attempts: QuizAttempt[]
   stats: {
-    totalQuizzes: number
-    activeQuizzes: number
     totalAttempts: number
-    totalRevenue: string
+    completedAttempts: number
+    passedQuizzes: number
+    totalEarnings: string
   }
 }
 
-export default function TeacherDashboard() {
+export default function StudentDashboard() {
   const { data: session } = useSession()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -46,7 +45,7 @@ export default function TeacherDashboard() {
       try {
         setLoading(true)
         setError(null)
-        const response = await fetch('/api/teacher/dashboard')
+        const response = await fetch('/api/student/dashboard')
         const result = await response.json()
 
         if (response.ok) {
@@ -77,17 +76,11 @@ export default function TeacherDashboard() {
     })
   }
 
-  const formatSatoshis = (satoshis: string | number) => {
-    const sats = typeof satoshis === 'string' ? parseInt(satoshis) : satoshis
-    return sats.toLocaleString()
-  }
-
   const getStatusBadge = (status: string) => {
     const variants = {
-      ACTIVE: 'success',
-      REVEALED: 'info',
-      COMPLETED: 'default',
-      REFUNDED: 'danger'
+      PENDING: 'default',
+      VERIFIED: 'success',
+      REJECTED: 'danger',
     } as const
 
     return <Badge variant={variants[status as keyof typeof variants] || 'default'}>{status}</Badge>
@@ -98,32 +91,16 @@ export default function TeacherDashboard() {
       {/* Header Section */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">My Quizzes</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manage your created quizzes</p>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">My Attempts</h1>
+          <p className="text-gray-600 dark:text-gray-400">Track your quiz progress and earnings</p>
         </div>
-        <Link href="/teacher/create">
-          <Button size="lg">+ Create New Quiz</Button>
+        <Link href="/student/browse">
+          <Button size="lg">Browse Quizzes</Button>
         </Link>
       </div>
 
       {/* Stats Cards */}
       <div className="grid md:grid-cols-4 gap-4 mb-8">
-        <Card>
-          <CardBody>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Total Quizzes</div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">
-              {loading ? '...' : data?.stats.totalQuizzes || 0}
-            </div>
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Active Quizzes</div>
-            <div className="text-2xl font-bold text-green-600">
-              {loading ? '...' : data?.stats.activeQuizzes || 0}
-            </div>
-          </CardBody>
-        </Card>
         <Card>
           <CardBody>
             <div className="text-sm text-gray-600 dark:text-gray-400">Total Attempts</div>
@@ -134,9 +111,25 @@ export default function TeacherDashboard() {
         </Card>
         <Card>
           <CardBody>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Total Revenue</div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Completed</div>
             <div className="text-2xl font-bold text-blue-600">
-              {loading ? '...' : `${data?.stats.totalRevenue || '0.00000000'} BTC`}
+              {loading ? '...' : data?.stats.completedAttempts || 0}
+            </div>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Passed</div>
+            <div className="text-2xl font-bold text-green-600">
+              {loading ? '...' : data?.stats.passedQuizzes || 0}
+            </div>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Total Earnings</div>
+            <div className="text-2xl font-bold text-purple-600">
+              {loading ? '...' : `${data?.stats.totalEarnings || '0.00000000'} BTC`}
             </div>
           </CardBody>
         </Card>
@@ -163,89 +156,89 @@ export default function TeacherDashboard() {
         </Card>
       )}
 
-      {/* Quizzes List */}
+      {/* Attempts List */}
       {!loading && !error && data && (
         <div className="space-y-4">
-          {data.quizzes.length === 0 ? (
+          {data.attempts.length === 0 ? (
             <Card>
               <CardBody className="text-center py-12">
-                <div className="text-6xl mb-4">📝</div>
+                <div className="text-6xl mb-4">🎯</div>
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                  No quizzes yet
+                  No attempts yet
                 </h3>
                 <p className="text-gray-600 dark:text-gray-400 mb-4">
-                  Create your first quiz to get started and start earning!
+                  Start taking quizzes to earn rewards and test your knowledge!
                 </p>
-                <Link href="/teacher/create">
-                  <Button>Create Quiz</Button>
+                <Link href="/student/browse">
+                  <Button>Browse Available Quizzes</Button>
                 </Link>
               </CardBody>
             </Card>
           ) : (
-            data.quizzes.map((quiz) => (
-              <Card key={quiz.id} hover>
+            data.attempts.map((attempt) => (
+              <Card key={attempt.id} hover>
                 <CardBody>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-                          {quiz.title || `Quiz ${quiz.contractId.slice(0, 8)}...`}
+                          {attempt.quiz.title || 'Untitled Quiz'}
                         </h3>
-                        {getStatusBadge(quiz.status)}
+                        {getStatusBadge(attempt.status)}
+                        {attempt.passed && (
+                          <Badge variant="success">✓ Passed</Badge>
+                        )}
+                        {attempt.status === 'VERIFIED' && !attempt.passed && (
+                          <Badge variant="danger">✗ Failed</Badge>
+                        )}
                       </div>
 
-                      {quiz.description && (
+                      {attempt.quiz.description && (
                         <p className="text-gray-600 dark:text-gray-400 text-sm mb-3">
-                          {quiz.description}
+                          {attempt.quiz.description}
                         </p>
                       )}
 
                       <div className="grid md:grid-cols-4 gap-4 text-sm mb-3">
                         <div>
+                          <span className="text-gray-600 dark:text-gray-400">Score:</span>
+                          <span className={`ml-2 font-medium ${
+                            attempt.passed ? 'text-green-600' : 'text-gray-900 dark:text-white'
+                          }`}>
+                            {attempt.score}%
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400">Required:</span>
+                          <span className="ml-2 font-medium text-gray-900 dark:text-white">
+                            {attempt.quiz.passThreshold}%
+                          </span>
+                        </div>
+                        <div>
                           <span className="text-gray-600 dark:text-gray-400">Questions:</span>
                           <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                            {quiz.questionCount}
+                            {attempt.quiz.questionCount}
                           </span>
                         </div>
                         <div>
-                          <span className="text-gray-600 dark:text-gray-400">Prize Pool:</span>
-                          <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                            {formatSatoshis(quiz.prizePool)} sats
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400">Entry Fee:</span>
-                          <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                            {formatSatoshis(quiz.entryFee)} sats
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400">Attempts:</span>
-                          <span className="ml-2 font-medium text-blue-600">
-                            {quiz._count?.attempts || 0}
+                          <span className="text-gray-600 dark:text-gray-400">Prize:</span>
+                          <span className="ml-2 font-medium text-purple-600">
+                            {attempt.prizeAmount ? `${(Number(attempt.prizeAmount) / 100000000).toFixed(8)} BTC` : 'N/A'}
                           </span>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
-                        <span>Deadline: {formatDate(quiz.deadline)}</span>
+                        <span>Submitted: {formatDate(attempt.submitTimestamp)}</span>
                         <span>•</span>
-                        <span>Pass: {quiz.passThreshold}%</span>
-                        <span>•</span>
-                        <span>Created: {formatDate(quiz.createdAt)}</span>
-                        {quiz._count?.winners > 0 && (
-                          <>
-                            <span>•</span>
-                            <span className="text-green-600">🏆 {quiz._count.winners} winners</span>
-                          </>
-                        )}
+                        <span>Quiz Status: {attempt.quiz.status}</span>
                       </div>
                     </div>
 
                     <div className="flex flex-col gap-2">
                       <Button size="sm" variant="outline">View Details</Button>
-                      {quiz.status === 'ACTIVE' && (
-                        <Button size="sm" variant="secondary">Reveal Answers</Button>
+                      {attempt.status === 'PENDING' && (
+                        <Badge variant="default">Awaiting Verification</Badge>
                       )}
                     </div>
                   </div>
@@ -253,6 +246,38 @@ export default function TeacherDashboard() {
               </Card>
             ))
           )}
+        </div>
+      )}
+
+      {/* Quick Actions */}
+      {!loading && !error && data && data.attempts.length > 0 && (
+        <div className="mt-8 grid md:grid-cols-2 gap-4">
+          <Card hover>
+            <CardBody className="text-center py-8">
+              <div className="text-4xl mb-3">📚</div>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                Browse More Quizzes
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Discover new quizzes and earn more rewards
+              </p>
+              <Link href="/student/browse">
+                <Button>Explore Quizzes</Button>
+              </Link>
+            </CardBody>
+          </Card>
+          <Card hover>
+            <CardBody className="text-center py-8">
+              <div className="text-4xl mb-3">🏆</div>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                Your Achievements
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                {data.stats.passedQuizzes} quizzes passed • {data.stats.totalEarnings} BTC earned
+              </p>
+              <Button variant="outline" disabled>Coming Soon</Button>
+            </CardBody>
+          </Card>
         </div>
       )}
     </main>
