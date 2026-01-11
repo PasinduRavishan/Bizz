@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { submitAttempt } from '@/services/attempt-service'
-import { getQuestionsLocally } from '@/lib/ipfs'
 
 interface Quiz {
   id: string
@@ -55,29 +54,39 @@ export default function TakeQuizPage() {
         const quizData = data.data[0]
         setQuiz(quizData)
 
-        // Try to get questions from local storage
-        const localQuestions = getQuestionsLocally(quizData.contractId)
-        if (localQuestions) {
-          // Remove correctAnswer for taking - students shouldn't see it
-          const questionsForTaking = localQuestions.map((q) => ({
-            question: q.question,
-            options: q.options
-          }))
-          setQuestions(questionsForTaking)
-        } else {
-          // Generate placeholder questions based on question count
-          // In production, fetch from IPFS using questionHashIPFS
-          const placeholderQuestions: Question[] = Array.from(
-            { length: quizData.questionCount },
-            (_, i) => ({
-              question: `Question ${i + 1} (Loading from IPFS...)`,
-              options: ['Option A', 'Option B', 'Option C', 'Option D']
-            })
-          )
-          setQuestions(placeholderQuestions)
+        // Production approach: Try database first, then IPFS as backup
+        console.log('📚 Loading quiz questions...')
+        
+        // 1. Try to get questions from database (most reliable)
+        if (quizData.questions && Array.isArray(quizData.questions) && quizData.questions.length > 0) {
+          console.log('✅ Loaded questions from database')
+          setQuestions(quizData.questions)
+          setCurrentStep('confirm')
+          return
         }
-
-        setCurrentStep('confirm')
+        
+        // 2. Try IPFS if available
+        if (quizData.questionHashIPFS) {
+          console.log('📡 Attempting to fetch from IPFS:', quizData.questionHashIPFS)
+          try {
+            const { fetchQuestionsFromIPFS } = await import('@/lib/ipfs')
+            const ipfsQuestions = await fetchQuestionsFromIPFS(quizData.questionHashIPFS)
+            
+            if (ipfsQuestions && ipfsQuestions.length > 0) {
+              console.log('✅ Loaded questions from IPFS')
+              setQuestions(ipfsQuestions)
+              setCurrentStep('confirm')
+              return
+            }
+          } catch (ipfsError) {
+            console.error('⚠️ Failed to fetch from IPFS:', ipfsError)
+          }
+        }
+        
+        // 3. Last resort: error state (no placeholders in production)
+        console.error('❌ No questions found in database or IPFS')
+        setError('Quiz questions not available. Please contact the quiz creator.')
+        setCurrentStep('error')
       } else {
         setError('Quiz not found')
         setCurrentStep('error')
@@ -473,7 +482,7 @@ export default function TakeQuizPage() {
           </div>
 
           <div className="flex gap-4">
-            <Link href="/student/my-attempts" className="flex-1">
+            <Link href="/student/dashboard" className="flex-1">
               <Button variant="outline" className="w-full">
                 View My Attempts
               </Button>

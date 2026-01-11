@@ -22,18 +22,24 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { connected, address, disconnect } = useWallet()
   const [role, setRoleState] = useState<UserRole>(null)
+  const [savedRole, setSavedRole] = useState<UserRole>(null)
 
-  // Load role from localStorage on mount
+  // Load role from localStorage
   useEffect(() => {
     if (connected && address) {
-      const savedRole = localStorage.getItem(`user_role_${address}`)
-      if (savedRole && (savedRole === 'TEACHER' || savedRole === 'STUDENT' || savedRole === 'BOTH')) {
-        setRoleState(savedRole as UserRole)
+      const stored = localStorage.getItem(`user_role_${address}`)
+      if (stored && (stored === 'TEACHER' || stored === 'STUDENT' || stored === 'BOTH')) {
+        setSavedRole(stored as UserRole)
       }
     } else {
-      setRoleState(null)
+      setSavedRole(null)
     }
   }, [connected, address])
+
+  // Apply saved role
+  useEffect(() => {
+    setRoleState(savedRole)
+  }, [savedRole])
 
   const setRole = (newRole: UserRole) => {
     setRoleState(newRole)

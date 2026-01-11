@@ -59,11 +59,8 @@ export async function submitAttempt(
     if (params.entryFee < 5000) {
       return { success: false, error: 'Entry fee must be at least 5,000 satoshis' }
     }
-    if (!params.studentPublicKey) {
-      return { success: false, error: 'Student public key is required' }
-    }
 
-    console.log('� Calling API to submit attempt...')
+    console.log('📤 Calling API to submit attempt...')
 
     // Call server API to deploy contract
     const response = await fetch('/api/attempts/submit', {
@@ -92,26 +89,8 @@ export async function submitAttempt(
     console.log('✅ Attempt submitted successfully!')
     console.log('  Attempt ID:', result.attemptId)
 
-    // Store nonce and answers locally for reveal phase
-    // IMPORTANT: Student needs this to reveal later!
-    if (typeof window !== 'undefined' && result.attemptId) {
-      const attemptData = {
-        attemptId: result.attemptId,
-        attemptRev: result.attemptRev,
-        quizId: params.quizId,
-        quizRev: params.quizRev,
-        answers: params.answers,
-        nonce: result.nonce,
-        commitment: result.commitment,
-        submittedAt: Date.now()
-      }
-      localStorage.setItem(`attempt_${result.attemptId}`, JSON.stringify(attemptData))
-
-      // Also store by quiz ID for easy lookup
-      const quizAttempts = JSON.parse(localStorage.getItem(`quiz_attempts_${params.quizId}`) || '[]')
-      quizAttempts.push(result.attemptId)
-      localStorage.setItem(`quiz_attempts_${params.quizId}`, JSON.stringify(quizAttempts))
-    }
+    // Note: Nonce and answers are stored in database via API
+    // No need for localStorage - fetch from API when needed for reveal
 
     return {
       success: true,
@@ -130,28 +109,23 @@ export async function submitAttempt(
 }
 
 /**
- * Get stored attempt data for reveal
+ * Get attempt data from API (production approach)
  *
  * @param attemptId - Attempt contract ID
- * @returns Stored attempt data or null
+ * @returns Attempt data from database
  */
-export function getStoredAttempt(attemptId: string): {
-  attemptId: string
-  attemptRev: string
-  quizId: string
-  quizRev: string
-  answers: string[]
-  nonce: string
-  commitment: string
-  submittedAt: number
-} | null {
-  if (typeof window !== 'undefined') {
-    const stored = localStorage.getItem(`attempt_${attemptId}`)
-    if (stored) {
-      return JSON.parse(stored)
+export async function getAttemptData(attemptId: string) {
+  try {
+    const response = await fetch(`/api/attempts/${attemptId}`)
+    if (!response.ok) {
+      throw new Error('Failed to fetch attempt data')
     }
+    const data = await response.json()
+    return data.success ? data.data : null
+  } catch (error) {
+    console.error('Error fetching attempt:', error)
+    return null
   }
-  return null
 }
 
 /**
@@ -189,17 +163,21 @@ export async function revealAnswers(
 }
 
 /**
- * Get all attempts for a quiz from local storage
+ * Get quiz attempts from API (production approach)
  *
  * @param quizId - Quiz contract ID
- * @returns Array of attempt IDs
+ * @returns Array of attempt IDs from database
  */
-export function getQuizAttempts(quizId: string): string[] {
-  if (typeof window !== 'undefined') {
-    const stored = localStorage.getItem(`quiz_attempts_${quizId}`)
-    if (stored) {
-      return JSON.parse(stored)
+export async function getQuizAttempts(quizId: string): Promise<string[]> {
+  try {
+    const response = await fetch(`/api/quizzes/${quizId}/attempts`)
+    if (!response.ok) {
+      return []
     }
+    const data = await response.json()
+    return data.success && data.attempts ? data.attempts.map((a: { id: string }) => a.id) : []
+  } catch (error) {
+    console.error('Error fetching quiz attempts:', error)
+    return []
   }
-  return []
 }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { generateSalt, hashAnswers } from '@/lib/crypto'
-import { uploadQuestionsToIPFS, storeQuestionsLocally } from '@/lib/ipfs'
+import { uploadQuestionsToIPFS } from '@/lib/ipfs'
 import { prisma } from '@/lib/prisma'
 import { getUserWallet } from '@/lib/wallet-service'
 
@@ -81,8 +81,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // @ts-expect-error
-    const { Computer } = await import('@bitcoin-computer/lib')
+    // @ts-expect-error - Bitcoin Computer lib doesn't have type definitions
+    await import('@bitcoin-computer/lib')
 
     // Get user's custodial wallet
     console.log('🔑 Getting teacher custodial wallet...')
@@ -235,8 +235,6 @@ export async function POST(request: NextRequest) {
     console.log('  Contract Rev:', quiz._rev)
     console.log('  TX ID:', txId)
 
-    storeQuestionsLocally(quiz._id, body.questions)
-
     // Save to database immediately (don't wait for indexer)
     try {
       // Use authenticated user from session
@@ -264,12 +262,19 @@ export async function POST(request: NextRequest) {
       const STUDENT_REVEAL_WINDOW = 24 * 3600 * 1000
       const TEACHER_REVEAL_WINDOW = 48 * 3600 * 1000
 
-      await prisma.quiz.create({
+      // Store questions WITHOUT correct answers for database (production-safe)
+      const questionsForDB = body.questions.map((q) => ({
+        question: q.question,
+        options: q.options
+      }))
+
+      const createdQuiz = await prisma.quiz.create({
         data: {
           contractId: quiz._id,
           contractRev: quiz._rev,
           teacherId: session.user.id,
           title: body.title || null,
+          questions: questionsForDB,  // Store in database
           questionHashIPFS: questionHashIPFS,
           answerHashes: answerHashes,
           questionCount: body.questions.length,
@@ -284,7 +289,8 @@ export async function POST(request: NextRequest) {
           salt: salt
         }
       })
-      console.log('💾 Quiz saved to database')
+      console.log('💾 Quiz saved to database with questions')
+      console.log('  Database ID:', createdQuiz.id)
     } catch (dbError) {
       console.error('⚠️ Failed to save to database (indexer will catch it):', dbError)
     }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { signIn, useSession } from 'next-auth/react'
+import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
@@ -9,7 +9,6 @@ import { Card, CardBody } from '@/components/ui/Card'
 
 export default function SignInPage() {
   const router = useRouter()
-  const { data: session } = useSession()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -36,7 +35,7 @@ export default function SignInPage() {
       // Redirect to home page which will handle role-based redirect
       router.replace('/')
       router.refresh()
-    } catch (error) {
+    } catch {
       setError('An error occurred. Please try again.')
       setIsLoading(false)
     }
@@ -110,7 +109,7 @@ export default function SignInPage() {
 
             <div className="mt-6 text-center">
               <p className="text-sm text-gray-600 dark:text-gray-400">
-                Don't have an account?{' '}
+                Don&apos;t have an account?{' '}
                 <Link href="/auth/signup" className="text-blue-600 hover:text-blue-700 font-medium">
                   Sign up
                 </Link>

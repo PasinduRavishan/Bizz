@@ -1,11 +1,7 @@
 /**
- * IPFS utilities for Quiz Platform
- *
- * For now, we use a simple placeholder that stores questions
- * as a JSON string hash. In production, this would upload to IPFS.
+ * IPFS utilities for Quiz Platform - Production Implementation
+ * Uses Pinata for reliable IPFS uploads and multiple gateways for fetching
  */
-
-import CryptoJS from 'crypto-js'
 
 export interface QuizQuestion {
   question: string
@@ -14,26 +10,51 @@ export interface QuizQuestion {
 }
 
 /**
- * Upload questions to IPFS (placeholder implementation)
- *
- * In production, this would:
- * 1. Upload JSON to IPFS via Infura/Pinata
- * 2. Return the IPFS CID (Content Identifier)
- *
- * For now, we create a deterministic hash of the questions
- * that can be used as a placeholder identifier.
+ * Upload questions to IPFS via Pinata
  *
  * @param questions - Array of questions (without correct answers)
- * @returns Promise resolving to IPFS-like hash
+ * @returns Promise resolving to IPFS CID
  */
 export async function uploadQuestionsToIPFS(questions: QuizQuestion[]): Promise<string> {
-  // Create a deterministic hash of the questions
-  const questionsJson = JSON.stringify(questions)
-  const hash = CryptoJS.SHA256(questionsJson).toString()
+  const PINATA_JWT = process.env.PINATA_JWT
+  
+  if (!PINATA_JWT) {
+    console.warn('⚠️ PINATA_JWT not configured, IPFS upload disabled')
+    throw new Error('IPFS upload not configured. Please set PINATA_JWT environment variable.')
+  }
 
-  // Return a placeholder IPFS-style CID
-  // Format: Qm + first 44 chars of hash (mimics IPFS CID v0)
-  return `Qm${hash.substring(0, 44)}`
+  try {
+    console.log('📤 Uploading questions to IPFS via Pinata...')
+    
+    const response = await fetch('https://api.pinata.cloud/pinning/pinJSONToIPFS', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${PINATA_JWT}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        pinataContent: questions,
+        pinataMetadata: {
+          name: `quiz-questions-${Date.now()}.json`
+        },
+        pinataOptions: {
+          cidVersion: 1
+        }
+      })
+    })
+
+    if (!response.ok) {
+      const error = await response.text()
+      throw new Error(`Pinata upload failed: ${error}`)
+    }
+
+    const data = await response.json()
+    console.log('✅ Questions uploaded to IPFS:', data.IpfsHash)
+    return data.IpfsHash
+  } catch (error) {
+    console.error('❌ IPFS upload error:', error)
+    throw error
+  }
 }
 
 /**
@@ -46,48 +67,40 @@ export async function uploadQuestionsToIPFS(questions: QuizQuestion[]): Promise<
  * @returns Promise resolving to questions array
  */
 export async function fetchQuestionsFromIPFS(ipfsHash: string): Promise<QuizQuestion[] | null> {
-  // Placeholder - in production, fetch from IPFS gateway
   console.log('Fetching from IPFS:', ipfsHash)
 
-  // For now, return null (questions not available)
-  // In production: fetch from https://ipfs.io/ipfs/{ipfsHash}
-  return null
-}
+  try {
+    // Try multiple IPFS gateways
+    const gateways = [
+      `https://ipfs.io/ipfs/${ipfsHash}`,
+      `https://cloudflare-ipfs.com/ipfs/${ipfsHash}`,
+      `https://gateway.pinata.cloud/ipfs/${ipfsHash}`
+    ]
 
-/**
- * Store questions locally (temporary solution)
- *
- * Since IPFS integration is not complete, we store questions
- * in localStorage for demo purposes.
- *
- * @param quizId - Quiz identifier
- * @param questions - Array of questions with correct answers
- */
-export function storeQuestionsLocally(
-  quizId: string,
-  questions: Array<{ question: string; options: string[]; correctAnswer: number }>
-): void {
-  if (typeof window !== 'undefined') {
-    const key = `quiz_questions_${quizId}`
-    localStorage.setItem(key, JSON.stringify(questions))
-  }
-}
-
-/**
- * Retrieve questions from local storage
- *
- * @param quizId - Quiz identifier
- * @returns Questions array or null
- */
-export function getQuestionsLocally(
-  quizId: string
-): Array<{ question: string; options: string[]; correctAnswer: number }> | null {
-  if (typeof window !== 'undefined') {
-    const key = `quiz_questions_${quizId}`
-    const stored = localStorage.getItem(key)
-    if (stored) {
-      return JSON.parse(stored)
+    for (const gateway of gateways) {
+      try {
+        const response = await fetch(gateway, { 
+          method: 'GET',
+          signal: AbortSignal.timeout(5000) // 5 second timeout
+        })
+        
+        if (response.ok) {
+          const questions = await response.json()
+          console.log('✅ Fetched from IPFS gateway:', gateway)
+          return questions
+        }
+      } catch {
+        console.log('Failed gateway:', gateway)
+        continue
+      }
     }
+
+    console.log('⚠️ All IPFS gateways failed')
+    return null
+  } catch (error) {
+    console.error('Error fetching from IPFS:', error)
+    return null
   }
-  return null
 }
+
+

@@ -71,6 +71,7 @@ model Quiz {
   teacherId         String
   teacher           User     @relation(fields: [teacherId], references: [id])
   
+  questions         Json?              // Full questions stored in database (backup)
   questionHashIPFS  String             // IPFS hash of questions
   answerHashes      String[]           // Array of hashed answers
   questionCount     Int

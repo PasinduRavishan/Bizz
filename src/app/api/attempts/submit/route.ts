@@ -43,9 +43,9 @@ export async function POST(request: NextRequest) {
     const body: SubmitAttemptRequest = await request.json()
 
     // Validation
-    if (!body.quizContractRev) {
+    if (!body.quizContractRev && !body.quizContractId) {
       return NextResponse.json(
-        { success: false, error: 'Quiz contract revision is required' },
+        { success: false, error: 'Quiz contract ID or revision is required' },
         { status: 400 }
       )
     }
@@ -77,8 +77,8 @@ export async function POST(request: NextRequest) {
 
     console.log('🔐 Commitment hash:', answerCommitment.substring(0, 20) + '...')
 
-    // @ts-expect-error - Dynamic import for Bitcoin Computer
-    const { Computer } = await import('@bitcoin-computer/lib')
+    // @ts-expect-error - Bitcoin Computer lib doesn't have type definitions
+    await import('@bitcoin-computer/lib')
 
     // Get student's custodial wallet
     console.log('🔑 Getting student custodial wallet...')

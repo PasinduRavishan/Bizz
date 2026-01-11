@@ -128,11 +128,8 @@ export default function CreateQuizPage() {
         setCreatedQuizId(result.quizId)
         setDeploymentStep('success')
         setDeploymentMessage('Quiz created successfully!')
-
-        // Store title locally for display
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(`quiz_title_${result.quizId}`, title)
-        }
+        
+        // Title already stored in database, no need for localStorage
       } else {
         setError(result.error || 'Failed to create quiz')
         setDeploymentStep('error')

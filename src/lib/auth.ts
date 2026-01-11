@@ -53,7 +53,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id
         token.role = user.role as 'TEACHER' | 'STUDENT' | 'BOTH'
-        token.address = (user as any).address
+        token.address = (user as { address?: string }).address
       }
       return token
     },

@@ -95,15 +95,8 @@ export async function createQuiz(
     console.log('✅ Quiz created successfully!')
     console.log('  Quiz ID:', result.quizId)
 
-    // Store salt and answers locally (teacher needs these for reveal)
-    if (typeof window !== 'undefined' && result.quizId) {
-      localStorage.setItem(`quiz_salt_${result.quizId}`, result.salt)
-      localStorage.setItem(`quiz_answers_${result.quizId}`, JSON.stringify(result.correctAnswers))
-      
-      if (params.title) {
-        localStorage.setItem(`quiz_title_${result.quizId}`, params.title)
-      }
-    }
+    // Note: Salt and answers are stored in database via API
+    // No need for localStorage - fetch from API when needed for reveal
 
     return {
       success: true,
@@ -122,30 +115,42 @@ export async function createQuiz(
 }
 
 /**
- * Get stored salt for a quiz (for teacher reveal)
+ * Get quiz salt from API (production approach)
  *
  * @param quizId - Quiz contract ID
- * @returns Salt string or null
+ * @returns Salt string from database or null
  */
-export function getQuizSalt(quizId: string): string | null {
-  if (typeof window !== 'undefined') {
-    return localStorage.getItem(`quiz_salt_${quizId}`)
+export async function getQuizSalt(quizId: string): Promise<string | null> {
+  try {
+    const response = await fetch(`/api/quizzes/${quizId}`)
+    if (!response.ok) {
+      return null
+    }
+    const data = await response.json()
+    return data.success && data.quiz ? data.quiz.salt : null
+  } catch (error) {
+    console.error('Error fetching quiz salt:', error)
+    return null
   }
-  return null
 }
 
 /**
- * Get stored correct answers for a quiz (for teacher reveal)
+ * Get quiz answers from API (production approach)
+ * Note: This should only be accessible to the quiz creator
  *
  * @param quizId - Quiz contract ID
- * @returns Array of correct answers or null
+ * @returns Array of correct answers from database or null
  */
-export function getQuizAnswers(quizId: string): string[] | null {
-  if (typeof window !== 'undefined') {
-    const stored = localStorage.getItem(`quiz_answers_${quizId}`)
-    if (stored) {
-      return JSON.parse(stored)
+export async function getQuizAnswers(quizId: string): Promise<string[] | null> {
+  try {
+    const response = await fetch(`/api/quizzes/${quizId}/answers`)
+    if (!response.ok) {
+      return null
     }
+    const data = await response.json()
+    return data.success && data.answers ? data.answers : null
+  } catch (error) {
+    console.error('Error fetching quiz answers:', error)
+    return null
   }
-  return null
 }
