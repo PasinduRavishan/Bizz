@@ -161,8 +161,57 @@ class Quiz extends Contract {
   }
 
   /**
-   * Mark quiz as completed after verification
-   * Called by verification process
+   * Distribute prizes to winners
+   * Creates Payment contracts for each winner
+   * Called by teacher after verification
+   * 
+   * @param {Array} winners - Array of {student: string, amount: bigint}
+   * @returns {Array} Array of Payment contract revs
+   */
+  async distributePrizes(winners) {
+    if (this.status !== 'revealed') {
+      throw new Error('Quiz must be revealed first')
+    }
+
+    // Only teacher can distribute
+    if (!this._owners.includes(this.teacher)) {
+      throw new Error('Only teacher can distribute prizes')
+    }
+
+    if (!Array.isArray(winners) || winners.length === 0) {
+      // No winners - keep prize pool
+      this.status = 'completed'
+      return []
+    }
+
+    // Import Payment contract dynamically
+    const Payment = (await import('./Payment.js')).default
+
+    const payments = []
+    let totalDistributed = 0n
+
+    // Create a Payment contract for each winner
+    for (const winner of winners) {
+      const payment = new Payment(
+        winner.student,
+        winner.amount,
+        `Quiz Prize - ${this.questionHashIPFS}`,
+        this._id
+      )
+      payments.push(payment._rev)
+      totalDistributed += winner.amount
+    }
+
+    // Reduce quiz contract satoshis by distributed amount
+    this._satoshis = this._satoshis - totalDistributed
+    this.winners = winners
+    this.status = 'completed'
+
+    return payments
+  }
+
+  /**
+   * Mark quiz as completed (legacy method for compatibility)
    * 
    * @param {Array} winners - Array of winner objects
    * @returns {Quiz} Returns this for chaining
@@ -176,8 +225,6 @@ class Quiz extends Contract {
     this.status = 'completed'
 
     return undefined
-    
-    
   }
 
   /**

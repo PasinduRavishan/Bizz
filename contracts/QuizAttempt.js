@@ -111,6 +111,45 @@ class QuizAttempt extends Contract {
   }
 
   /**
+   * Collect entry fee - teacher claims the entry fee from this attempt
+   * Creates a Payment contract for the teacher (minus platform fee)
+   * 
+   * @param {string} teacher - Teacher's public key
+   * @param {number} platformFeePercent - Platform fee percentage (e.g., 0.02 for 2%)
+   * @returns {Object} {teacherPayment: Payment, platformFee: bigint}
+   */
+  async collectFee(teacher, platformFeePercent = 0.02) {
+    if (this.status !== 'verified' && this.status !== 'failed') {
+      throw new Error('Attempt must be verified or failed first')
+    }
+
+    // Import Payment contract
+    const Payment = (await import('./Payment.js')).default
+
+    const entryFee = this._satoshis
+    const platformFeeAmount = BigInt(Math.floor(Number(entryFee) * platformFeePercent))
+    const teacherAmount = entryFee - platformFeeAmount
+
+    // Create payment for teacher
+    const teacherPayment = new Payment(
+      teacher,
+      teacherAmount,
+      `Entry Fee Collection - ${this.quizRef}`,
+      this._id
+    )
+
+    // Reduce attempt contract to dust (fee collected)
+    this._satoshis = 546n
+    this.status = 'fee_collected'
+
+    return {
+      teacherPayment: teacherPayment._rev,
+      teacherAmount,
+      platformFeeAmount
+    }
+  }
+
+  /**
    * Get attempt info
    * @returns {Object} Attempt information
    */

@@ -228,6 +228,37 @@ export async function POST(
     // Calculate scores for all revealed attempts
     const scoringResults = await calculateAndUpdateScores(quiz.id, answers)
 
+    // Process payments: distribute prizes to winners using contract methods
+    console.log('\n💰 Processing prize distribution via contracts...')
+    let paymentResults
+    try {
+      const { processCompletePayments } = await import('@/lib/payment-distribution')
+      paymentResults = await processCompletePayments(quiz.id)
+      console.log('✅ Complete payment processing done!')
+    } catch (paymentError) {
+      console.error('⚠️ Payment processing failed:', paymentError)
+      // Don't fail the reveal - payments can be retried
+      paymentResults = {
+        success: false,
+        error: paymentError instanceof Error ? paymentError.message : 'Payment processing failed'
+      }
+    }
+
+    // Helper function to convert BigInt to string for JSON serialization
+    const convertBigIntToString = (obj: any): any => {
+      if (obj === null || obj === undefined) return obj
+      if (typeof obj === 'bigint') return obj.toString()
+      if (Array.isArray(obj)) return obj.map(convertBigIntToString)
+      if (typeof obj === 'object') {
+        const converted: any = {}
+        for (const key in obj) {
+          converted[key] = convertBigIntToString(obj[key])
+        }
+        return converted
+      }
+      return obj
+    }
+
     return NextResponse.json({
       success: true,
       message: 'Quiz answers revealed successfully',
@@ -237,7 +268,8 @@ export async function POST(
         txId: txId,
         status: 'REVEALED',
         revealTimestamp: new Date().toISOString(),
-        scoringResults
+        scoringResults: convertBigIntToString(scoringResults),
+        paymentResults: convertBigIntToString(paymentResults)
       }
     })
 

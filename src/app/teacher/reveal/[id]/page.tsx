@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
+import { PaymentStatus } from '@/components/quiz/PaymentStatus'
 import { revealQuizAnswers, getQuizRevealStatus } from '@/services/quiz-service'
 
 interface RevealStatus {
@@ -510,74 +511,73 @@ export default function TeacherRevealPage() {
 
   // Complete State
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-zinc-900 flex items-center justify-center">
-      <Card className="max-w-2xl">
-        <CardBody className="text-center py-12">
-          <div className="w-20 h-20 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-4xl">✓</span>
-          </div>
-          <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-            Quiz Revealed Successfully!
-          </h3>
-          <p className="text-gray-600 dark:text-gray-400 mb-2">
-            Answers published and all attempts have been graded.
-          </p>
-          {txId && (
-            <p className="text-sm text-gray-500 dark:text-gray-500 font-mono mb-6">
-              TX: {txId.substring(0, 20)}...
+    <main className="container mx-auto px-4 py-8 max-w-6xl">
+      {/* Success Header */}
+      <div className="mb-8">
+        <Card>
+          <CardBody className="text-center py-8">
+            <div className="w-20 h-20 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-4xl">✓</span>
+            </div>
+            <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+              Quiz Revealed Successfully!
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-2">
+              Answers published and all attempts have been graded.
             </p>
-          )}
+            {txId && (
+              <p className="text-sm text-gray-500 dark:text-gray-500 font-mono">
+                TX: {txId.substring(0, 20)}...
+              </p>
+            )}
+          </CardBody>
+        </Card>
+      </div>
 
-          {/* Scoring Results */}
-          {scoringResults && (
-            <div className="bg-gray-50 dark:bg-zinc-800 rounded-lg p-6 mb-6">
-              <h4 className="font-bold text-gray-900 dark:text-white mb-4">Results Summary</h4>
+      {/* Scoring Results */}
+      {scoringResults && (
+        <div className="mb-8">
+          <Card>
+            <CardHeader>
+              <h4 className="font-bold text-gray-900 dark:text-white">📊 Grading Results</h4>
+            </CardHeader>
+            <CardBody>
               <div className="grid grid-cols-3 gap-4 text-center">
-                <div>
-                  <div className="text-3xl font-bold text-gray-900 dark:text-white">
+                <div className="bg-gray-50 dark:bg-gray-800 p-6 rounded-lg">
+                  <div className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
                     {scoringResults.processed}
                   </div>
-                  <div className="text-gray-500">Graded</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Total Graded</div>
                 </div>
-                <div>
-                  <div className="text-3xl font-bold text-green-600">
+                <div className="bg-green-50 dark:bg-green-900/20 p-6 rounded-lg">
+                  <div className="text-4xl font-bold text-green-600 dark:text-green-400 mb-2">
                     {scoringResults.passed}
                   </div>
-                  <div className="text-gray-500">Passed</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Passed</div>
                 </div>
-                <div>
-                  <div className="text-3xl font-bold text-red-600">
+                <div className="bg-red-50 dark:bg-red-900/20 p-6 rounded-lg">
+                  <div className="text-4xl font-bold text-red-600 dark:text-red-400 mb-2">
                     {scoringResults.failed}
                   </div>
-                  <div className="text-gray-500">Failed</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Failed</div>
                 </div>
               </div>
-            </div>
-          )}
+            </CardBody>
+          </Card>
+        </div>
+      )}
 
-          <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-6 mb-6 text-left">
-            <h4 className="font-bold text-gray-900 dark:text-white mb-3">What Happens Next:</h4>
-            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
-              <li className="flex items-start gap-2">
-                <span className="text-blue-600">1.</span>
-                <span>Winners will receive their share of the prize pool</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-blue-600">2.</span>
-                <span>Entry fees will be credited to your wallet</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-blue-600">3.</span>
-                <span>Students can view their results and scores</span>
-              </li>
-            </ul>
-          </div>
+      {/* Payment Status */}
+      <div className="mb-8">
+        <PaymentStatus quizId={quizId} />
+      </div>
 
-          <Link href="/teacher/dashboard">
-            <Button className="w-full">Back to Dashboard</Button>
-          </Link>
-        </CardBody>
-      </Card>
-    </div>
+      {/* Actions */}
+      <div className="flex justify-center gap-4">
+        <Link href="/teacher/dashboard">
+          <Button size="lg">← Back to Dashboard</Button>
+        </Link>
+      </div>
+    </main>
   )
 }

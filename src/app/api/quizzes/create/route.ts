@@ -5,6 +5,7 @@ import { generateSalt, hashAnswers, encryptQuizRevealData } from '@/lib/crypto'
 import { uploadQuestionsToIPFS } from '@/lib/ipfs'
 import { prisma } from '@/lib/prisma'
 import { getUserWallet } from '@/lib/wallet-service'
+import { ensureWalletHasUTXOs } from '@/lib/wallet-funding'
 
 export const runtime = 'nodejs'
 
@@ -213,6 +214,33 @@ export async function POST(request: NextRequest) {
         }
       }
     `
+
+    // Ensure wallet has spendable UTXOs before deploying
+    // Note: On regtest, if balance exists but no UTXOs (all locked in contracts),
+    // we skip the check and let deployment proceed with contract-locked funds
+    console.log('💰 Ensuring wallet has spendable UTXOs...')
+    try {
+      const { balance } = await computer.getBalance()
+      const hasBalance = balance > BigInt(body.prizePool + 50000) // Prize pool + buffer for fees
+      
+      // Skip UTXO check if wallet has sufficient balance (even if locked in contracts)
+      // This is a workaround for regtest where faucet creates contract-locked funds
+      await ensureWalletHasUTXOs(
+        session.user.id, 
+        100000,
+        hasBalance // Skip check if has balance
+      )
+    } catch (fundingError) {
+      console.error('❌ Wallet funding check failed:', fundingError)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: fundingError instanceof Error ? fundingError.message : 'Failed to ensure wallet has funds',
+          hint: 'Your wallet has balance but all funds are locked in existing contracts. Please send fresh coins from an external wallet to create new contracts.'
+        },
+        { status: 400 }
+      )
+    }
 
     console.log('📦 Deploying Quiz contract module...')
     const moduleSpecifier = await computer.deploy(QuizContract)

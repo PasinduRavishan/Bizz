@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Card, CardBody } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { WalletBalance } from '@/components/wallet/WalletBalance'
+import { PaymentStatus } from '@/components/quiz/PaymentStatus'
 
 interface Quiz {
   id: string
@@ -43,6 +44,7 @@ export default function TeacherDashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [selectedQuizForPayment, setSelectedQuizForPayment] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -298,10 +300,19 @@ export default function TeacherDashboard() {
                         <Badge variant="info" className="text-xs">
                           {getRevealStatus(quiz).message}
                         </Badge>
-                      ) : quiz.status === 'REVEALED' ? (
-                        <Badge variant="success" className="text-xs">
-                          ✓ Completed
-                        </Badge>
+                      ) : (quiz.status === 'REVEALED' || quiz.status === 'COMPLETED') ? (
+                        <>
+                          <Badge variant="success" className="text-xs mb-1">
+                            ✓ Completed
+                          </Badge>
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => setSelectedQuizForPayment(quiz.id)}
+                          >
+                            💰 View Payments
+                          </Button>
+                        </>
                       ) : null}
                       <Link href={`/teacher/reveal/${quiz.id}`}>
                         <Button size="sm" variant="outline">View Details</Button>
@@ -312,6 +323,32 @@ export default function TeacherDashboard() {
               </Card>
             ))
           )}
+        </div>
+      )}
+
+      {/* Payment Status Modal */}
+      {selectedQuizForPayment && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-900 rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b dark:border-gray-700 p-4 flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Payment Details</h2>
+              <button
+                onClick={() => setSelectedQuizForPayment(null)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <PaymentStatus 
+                quizId={selectedQuizForPayment} 
+                onRetry={() => {
+                  // Refresh dashboard after retry
+                  window.location.reload()
+                }}
+              />
+            </div>
+          </div>
         </div>
       )}
     </main>
