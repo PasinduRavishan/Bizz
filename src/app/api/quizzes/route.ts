@@ -2,20 +2,66 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { QuizStatus } from '@prisma/client'
 
-// GET /api/quizzes - Get all quizzes
+// GET /api/quizzes - Get all quizzes or a single quiz by ID
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
     const teacherAddress = searchParams.get('teacher')
-    
-    // Build where clause
+    const quizId = searchParams.get('id')
+
+    // If ID is provided, return a single quiz
+    if (quizId) {
+      const quiz = await prisma.quiz.findFirst({
+        where: {
+          OR: [
+            { id: quizId },
+            { contractId: quizId }
+          ]
+        },
+        include: {
+          teacher: {
+            select: {
+              address: true,
+              publicKey: true
+            }
+          },
+          _count: {
+            select: {
+              attempts: true,
+              winners: true
+            }
+          }
+        }
+      })
+
+      if (!quiz) {
+        return NextResponse.json(
+          { success: false, error: 'Quiz not found' },
+          { status: 404 }
+        )
+      }
+
+      const serializedQuiz = {
+        ...quiz,
+        prizePool: quiz.prizePool.toString(),
+        entryFee: quiz.entryFee.toString(),
+        attemptCount: quiz._count.attempts
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: [serializedQuiz]
+      })
+    }
+
+    // Build where clause for listing
     const where: Record<string, unknown> = {}
-    
+
     if (status) {
       where.status = status.toUpperCase() as QuizStatus
     }
-    
+
     if (teacherAddress) {
       // Find teacher by address
       const teacher = await prisma.user.findUnique({
@@ -25,7 +71,7 @@ export async function GET(request: NextRequest) {
         where.teacherId = teacher.id
       }
     }
-    
+
     // Query quizzes with teacher info
     const quizzes = await prisma.quiz.findMany({
       where,
@@ -46,7 +92,7 @@ export async function GET(request: NextRequest) {
         createdAt: 'desc'
       }
     })
-    
+
     // Convert BigInt to string for JSON serialization
     const serializedQuizzes = quizzes.map(quiz => ({
       ...quiz,
@@ -54,7 +100,7 @@ export async function GET(request: NextRequest) {
       entryFee: quiz.entryFee.toString(),
       attemptCount: quiz._count.attempts
     }))
-    
+
     return NextResponse.json({
       success: true,
       data: serializedQuizzes,

@@ -128,8 +128,16 @@ export default function CreateQuizPage() {
         setCreatedQuizId(result.quizId)
         setDeploymentStep('success')
         setDeploymentMessage('Quiz created successfully!')
-        
-        // Title already stored in database, no need for localStorage
+
+        // Store answers and salt for reveal phase
+        if (result.salt && result.correctAnswers) {
+          localStorage.setItem(`quiz_${result.quizId}`, JSON.stringify({
+            answers: result.correctAnswers,
+            salt: result.salt,
+            timestamp: Date.now()
+          }))
+          console.log('Stored quiz data for reveal:', result.quizId)
+        }
       } else {
         setError(result.error || 'Failed to create quiz')
         setDeploymentStep('error')

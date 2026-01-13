@@ -142,17 +142,120 @@ export function decryptMnemonic(encryptedMnemonic: string, encryptionKey: string
   if (!encryptionKey || encryptionKey.length < 32) {
     throw new Error('Encryption key must be at least 32 characters')
   }
-  
+
   try {
     const decrypted = CryptoJS.AES.decrypt(encryptedMnemonic, encryptionKey)
     const mnemonic = decrypted.toString(CryptoJS.enc.Utf8)
-    
+
     if (!mnemonic) {
       throw new Error('Decryption failed - invalid key or corrupted data')
     }
-    
+
     return mnemonic
   } catch (error) {
     throw new Error('Failed to decrypt mnemonic: ' + (error instanceof Error ? error.message : 'Unknown error'))
+  }
+}
+
+/**
+ * Reveal Data Encryption/Decryption for Production Storage
+ *
+ * Uses AES-256 encryption to securely store reveal data server-side.
+ * This eliminates the need for localStorage and provides cross-device support.
+ */
+
+export interface QuizRevealData {
+  answers: string[]
+  salt: string
+}
+
+export interface AttemptRevealData {
+  answers: string[]
+  nonce: string
+}
+
+/**
+ * Encrypt quiz reveal data (teacher's correct answers + salt)
+ *
+ * @param data - Quiz reveal data containing answers and salt
+ * @param encryptionKey - Encryption key from environment (REVEAL_DATA_KEY)
+ * @returns Encrypted string
+ */
+export function encryptQuizRevealData(data: QuizRevealData, encryptionKey: string): string {
+  if (!encryptionKey || encryptionKey.length < 32) {
+    throw new Error('Encryption key must be at least 32 characters')
+  }
+
+  const jsonData = JSON.stringify(data)
+  const encrypted = CryptoJS.AES.encrypt(jsonData, encryptionKey)
+  return encrypted.toString()
+}
+
+/**
+ * Decrypt quiz reveal data
+ *
+ * @param encryptedData - Encrypted reveal data string
+ * @param encryptionKey - Encryption key from environment
+ * @returns Decrypted quiz reveal data
+ */
+export function decryptQuizRevealData(encryptedData: string, encryptionKey: string): QuizRevealData {
+  if (!encryptionKey || encryptionKey.length < 32) {
+    throw new Error('Encryption key must be at least 32 characters')
+  }
+
+  try {
+    const decrypted = CryptoJS.AES.decrypt(encryptedData, encryptionKey)
+    const jsonString = decrypted.toString(CryptoJS.enc.Utf8)
+
+    if (!jsonString) {
+      throw new Error('Decryption failed - invalid key or corrupted data')
+    }
+
+    return JSON.parse(jsonString) as QuizRevealData
+  } catch (error) {
+    throw new Error('Failed to decrypt quiz reveal data: ' + (error instanceof Error ? error.message : 'Unknown error'))
+  }
+}
+
+/**
+ * Encrypt attempt reveal data (student's answers + nonce)
+ *
+ * @param data - Attempt reveal data containing answers and nonce
+ * @param encryptionKey - Encryption key from environment (REVEAL_DATA_KEY)
+ * @returns Encrypted string
+ */
+export function encryptAttemptRevealData(data: AttemptRevealData, encryptionKey: string): string {
+  if (!encryptionKey || encryptionKey.length < 32) {
+    throw new Error('Encryption key must be at least 32 characters')
+  }
+
+  const jsonData = JSON.stringify(data)
+  const encrypted = CryptoJS.AES.encrypt(jsonData, encryptionKey)
+  return encrypted.toString()
+}
+
+/**
+ * Decrypt attempt reveal data
+ *
+ * @param encryptedData - Encrypted reveal data string
+ * @param encryptionKey - Encryption key from environment
+ * @returns Decrypted attempt reveal data
+ */
+export function decryptAttemptRevealData(encryptedData: string, encryptionKey: string): AttemptRevealData {
+  if (!encryptionKey || encryptionKey.length < 32) {
+    throw new Error('Encryption key must be at least 32 characters')
+  }
+
+  try {
+    const decrypted = CryptoJS.AES.decrypt(encryptedData, encryptionKey)
+    const jsonString = decrypted.toString(CryptoJS.enc.Utf8)
+
+    if (!jsonString) {
+      throw new Error('Decryption failed - invalid key or corrupted data')
+    }
+
+    return JSON.parse(jsonString) as AttemptRevealData
+  } catch (error) {
+    throw new Error('Failed to decrypt attempt reveal data: ' + (error instanceof Error ? error.message : 'Unknown error'))
   }
 }

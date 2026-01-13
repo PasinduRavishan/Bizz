@@ -84,8 +84,17 @@ jobs:
       - name: Build Next.js app
         run: npm run build
         env:
+          # Public variables (safe to expose)
           NEXT_PUBLIC_BITCOIN_COMPUTER_NETWORK: regtest
           NEXT_PUBLIC_BITCOIN_COMPUTER_CHAIN: LTC
+          NEXT_PUBLIC_BITCOIN_COMPUTER_URL: https://rltc.node.bitcoincomputer.io
+          NEXT_PUBLIC_IPFS_GATEWAY: https://gateway.pinata.cloud/ipfs/
+          NEXT_PUBLIC_PLATFORM_FEE: 0.02
+          NEXT_PUBLIC_MIN_ENTRY_FEE: 5000
+          NEXT_PUBLIC_APP_NAME: Bizz
+          # Database (not used at build time but required for type checking)
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
       
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -111,6 +120,23 @@ jobs:
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           vercel-args: '--prod'
+        env:
+          # Authentication (CRITICAL)
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL_PRODUCTION }}
+          # Database
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          # Encryption
+          WALLET_ENCRYPTION_KEY: ${{ secrets.WALLET_ENCRYPTION_KEY }}
+          REVEAL_DATA_KEY: ${{ secrets.REVEAL_DATA_KEY }}
+          # Bitcoin Computer
+          BITCOIN_COMPUTER_MNEMONIC: ${{ secrets.BITCOIN_COMPUTER_MNEMONIC }}
+          # IPFS
+          PINATA_JWT: ${{ secrets.PINATA_JWT }}
+          # Reveal Windows (Production: 24 hours)
+          STUDENT_REVEAL_WINDOW_MINUTES: 1440
+          TEACHER_REVEAL_WINDOW_MINUTES: 1440
 
   # Job 5: Deploy to Vercel (Preview)
   deploy-preview:
@@ -129,3 +155,19 @@ jobs:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+        env:
+          # Authentication (CRITICAL) - Vercel auto-sets NEXTAUTH_URL for previews
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          # Database
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          # Encryption
+          WALLET_ENCRYPTION_KEY: ${{ secrets.WALLET_ENCRYPTION_KEY }}
+          REVEAL_DATA_KEY: ${{ secrets.REVEAL_DATA_KEY }}
+          # Bitcoin Computer
+          BITCOIN_COMPUTER_MNEMONIC: ${{ secrets.BITCOIN_COMPUTER_MNEMONIC }}
+          # IPFS
+          PINATA_JWT: ${{ secrets.PINATA_JWT }}
+          # Reveal Windows (Testing: 5 minutes for previews)
+          STUDENT_REVEAL_WINDOW_MINUTES: 5
+          TEACHER_REVEAL_WINDOW_MINUTES: 5

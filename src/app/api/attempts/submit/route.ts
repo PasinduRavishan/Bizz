@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { hashCommitment, generateNonce } from '@/lib/crypto'
+import { hashCommitment, generateNonce, encryptAttemptRevealData } from '@/lib/crypto'
 import { prisma } from '@/lib/prisma'
 import { getUserWallet } from '@/lib/wallet-service'
 
@@ -60,6 +60,54 @@ export async function POST(request: NextRequest) {
     if (body.entryFee < 5000) {
       return NextResponse.json(
         { success: false, error: 'Entry fee must be at least 5,000 satoshis' },
+        { status: 400 }
+      )
+    }
+
+    // Check if quiz exists and get deadline
+    const quizRecord = await prisma.quiz.findFirst({
+      where: {
+        OR: [
+          { contractRev: body.quizContractRev },
+          { contractId: body.quizContractId }
+        ]
+      },
+      select: {
+        id: true,
+        deadline: true,
+        status: true,
+        questionCount: true
+      }
+    })
+
+    if (!quizRecord) {
+      return NextResponse.json(
+        { success: false, error: 'Quiz not found' },
+        { status: 404 }
+      )
+    }
+
+    // CRITICAL: Enforce deadline - students cannot attempt after deadline
+    const now = new Date()
+    if (now >= quizRecord.deadline) {
+      return NextResponse.json(
+        { success: false, error: 'Quiz deadline has passed. You can no longer submit attempts.' },
+        { status: 400 }
+      )
+    }
+
+    // Validate quiz is active
+    if (quizRecord.status !== 'ACTIVE') {
+      return NextResponse.json(
+        { success: false, error: `Quiz is not accepting attempts (status: ${quizRecord.status})` },
+        { status: 400 }
+      )
+    }
+
+    // Validate answer count
+    if (body.answers.length !== quizRecord.questionCount) {
+      return NextResponse.json(
+        { success: false, error: `Expected ${quizRecord.questionCount} answers, got ${body.answers.length}` },
         { status: 400 }
       )
     }
@@ -228,6 +276,17 @@ export async function POST(request: NextRequest) {
       })
 
       if (quiz) {
+        // Encrypt reveal data for secure server-side storage (production-ready)
+        const REVEAL_DATA_KEY = process.env.REVEAL_DATA_KEY || process.env.WALLET_ENCRYPTION_KEY
+        if (!REVEAL_DATA_KEY) {
+          throw new Error('REVEAL_DATA_KEY environment variable is required')
+        }
+
+        const encryptedRevealData = encryptAttemptRevealData(
+          { answers: body.answers, nonce: nonce },
+          REVEAL_DATA_KEY
+        )
+
         await prisma.quizAttempt.create({
           data: {
             contractId: attempt._id,
@@ -236,10 +295,11 @@ export async function POST(request: NextRequest) {
             quizId: quiz.id,
             answerCommitment: answerCommitment,
             status: 'COMMITTED',
-            submitTimestamp: new Date()
+            submitTimestamp: new Date(),
+            encryptedRevealData: encryptedRevealData  // Encrypted answers + nonce for reveal
           }
         })
-        console.log('💾 Attempt saved to database')
+        console.log('💾 Attempt saved to database with encrypted reveal data')
       } else {
         console.log('⚠️ Quiz not found in database - indexer will sync later')
       }

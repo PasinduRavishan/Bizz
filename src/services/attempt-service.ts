@@ -24,13 +24,36 @@ export interface SubmitAttemptResult {
 }
 
 export interface RevealAnswersParams {
-  attemptRev: string // Attempt contract revision
-  answers: string[] // Original answers
-  nonce: string // Original nonce used for commitment
+  attemptId: string // Attempt ID (database or contract ID)
+  answers?: string[] // Optional - server fetches from encrypted storage
+  nonce?: string // Optional - server fetches from encrypted storage
 }
 
 export interface RevealAnswersResult {
   success: boolean
+  attemptId?: string
+  contractRev?: string
+  txId?: string
+  status?: string
+  revealTimestamp?: string
+  error?: string
+}
+
+export interface RevealStatusResult {
+  success: boolean
+  data?: {
+    attemptId: string
+    contractId: string
+    status: string
+    quizTitle: string | null
+    quizDeadline: string
+    studentRevealDeadline: string
+    canReveal: boolean
+    isRevealed: boolean
+    revealedAnswers: string[] | null
+    revealTimestamp: string | null
+    reason: string | null
+  }
   error?: string
 }
 
@@ -132,32 +155,92 @@ export async function getAttemptData(attemptId: string) {
  * Reveal answers for an attempt (Phase 2 of commit-reveal)
  *
  * This should be called after the quiz deadline but before reveal deadline.
+ * Calls the server API which handles blockchain interaction.
  *
- * @param computer - Bitcoin Computer instance
  * @param params - Reveal parameters
- * @returns Result
+ * @returns Result with reveal confirmation
  */
 export async function revealAnswers(
-  computer: { sync: (rev: string) => Promise<{ reveal: (answers: string[], nonce: string) => void }> },
   params: RevealAnswersParams
 ): Promise<RevealAnswersResult> {
   try {
-    // Sync the attempt contract
-    console.log('Syncing attempt contract...')
-    const attempt = await computer.sync(params.attemptRev)
+    // Validate inputs on client side
+    if (!params.attemptId) {
+      return { success: false, error: 'Attempt ID is required' }
+    }
 
-    // Call reveal method
-    console.log('Revealing answers...')
-    attempt.reveal(params.answers, params.nonce)
+    console.log('🔓 Calling API to reveal answers...')
+    console.log('  Server will decrypt answers and nonce from encrypted storage')
 
-    console.log('Answers revealed successfully!')
+    // Call server API to reveal on blockchain
+    // Server fetches and decrypts answers/nonce from encryptedRevealData
+    const response = await fetch(`/api/attempts/${params.attemptId}/reveal`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        // Answers and nonce are optional - server decrypts from database
+        ...(params.answers && { answers: params.answers }),
+        ...(params.nonce && { nonce: params.nonce })
+      })
+    })
 
-    return { success: true }
+    const result = await response.json()
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: result.error || 'Failed to reveal answers'
+      }
+    }
+
+    console.log('✅ Answers revealed successfully!')
+    console.log('  TX ID:', result.data?.txId)
+
+    return {
+      success: true,
+      attemptId: result.data?.attemptId,
+      contractRev: result.data?.contractRev,
+      txId: result.data?.txId,
+      status: result.data?.status,
+      revealTimestamp: result.data?.revealTimestamp
+    }
   } catch (error) {
-    console.error('Failed to reveal answers:', error)
+    console.error('❌ Failed to reveal answers:', error)
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to reveal answers'
+    }
+  }
+}
+
+/**
+ * Get reveal status for an attempt
+ *
+ * @param attemptId - Attempt ID (database or contract ID)
+ * @returns Reveal status information
+ */
+export async function getRevealStatus(attemptId: string): Promise<RevealStatusResult> {
+  try {
+    const response = await fetch(`/api/attempts/${attemptId}/reveal`)
+    if (!response.ok) {
+      const result = await response.json()
+      return {
+        success: false,
+        error: result.error || 'Failed to get reveal status'
+      }
+    }
+    const data = await response.json()
+    return {
+      success: true,
+      data: data.data
+    }
+  } catch (error) {
+    console.error('Error fetching reveal status:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get reveal status'
     }
   }
 }

@@ -28,7 +28,10 @@ export async function GET() {
             description: true,
             questionCount: true,
             passThreshold: true,
-            status: true
+            status: true,
+            deadline: true,
+            studentRevealDeadline: true,
+            teacherRevealDeadline: true
           }
         }
       },

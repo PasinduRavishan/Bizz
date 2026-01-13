@@ -52,6 +52,23 @@ export default function TakeQuizPage() {
 
       if (data.success && data.data && data.data.length > 0) {
         const quizData = data.data[0]
+        
+        // Check if deadline has passed
+        const now = new Date()
+        const deadline = new Date(quizData.deadline)
+        if (now >= deadline) {
+          setError('Quiz deadline has passed. You can no longer take this quiz.')
+          setCurrentStep('error')
+          return
+        }
+
+        // Check if quiz is active
+        if (quizData.status !== 'ACTIVE') {
+          setError(`This quiz is not accepting attempts (status: ${quizData.status})`)
+          setCurrentStep('error')
+          return
+        }
+
         setQuiz(quizData)
 
         // Production approach: Try database first, then IPFS as backup
@@ -150,6 +167,16 @@ export default function TakeQuizPage() {
 
       if (result.success && result.attemptId) {
         setAttemptId(result.attemptId)
+        // Store answers and nonce for reveal phase
+        if (result.nonce) {
+          localStorage.setItem(`attempt_${result.attemptId}`, JSON.stringify({
+            answers: answerStrings,
+            nonce: result.nonce,
+            quizId: quiz.contractId,
+            timestamp: Date.now()
+          }))
+          console.log('Stored attempt data for reveal:', result.attemptId)
+        }
         setCurrentStep('complete')
       } else {
         setError(result.error || 'Failed to submit attempt')
@@ -248,6 +275,12 @@ export default function TakeQuizPage() {
                     <span className="text-gray-600 dark:text-gray-400">Entry Fee:</span>
                     <span className="font-semibold text-gray-900 dark:text-white">
                       {formatSatoshis(quiz.entryFee)} LTC
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Deadline:</span>
+                    <span className="font-semibold text-orange-600">
+                      {new Date(quiz.deadline).toLocaleString()}
                     </span>
                   </div>
                 </div>

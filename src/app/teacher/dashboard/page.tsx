@@ -19,6 +19,8 @@ interface Quiz {
   passThreshold: number
   status: string
   deadline: string
+  studentRevealDeadline: string
+  teacherRevealDeadline: string
   createdAt: string
   _count: {
     attempts: number
@@ -92,6 +94,43 @@ export default function TeacherDashboard() {
     } as const
 
     return <Badge variant={variants[status as keyof typeof variants] || 'default'}>{status}</Badge>
+  }
+
+  const canReveal = (quiz: Quiz) => {
+    const now = new Date()
+    const studentRevealDeadline = new Date(quiz.studentRevealDeadline)
+    const teacherRevealDeadline = new Date(quiz.teacherRevealDeadline)
+    
+    return (
+      quiz.status === 'ACTIVE' &&
+      now >= studentRevealDeadline &&
+      now <= teacherRevealDeadline
+    )
+  }
+
+  const getRevealStatus = (quiz: Quiz) => {
+    const now = new Date()
+    const deadline = new Date(quiz.deadline)
+    const studentRevealDeadline = new Date(quiz.studentRevealDeadline)
+    const teacherRevealDeadline = new Date(quiz.teacherRevealDeadline)
+    
+    if (quiz.status !== 'ACTIVE') {
+      return { message: quiz.status, canReveal: false }
+    }
+    
+    if (now < deadline) {
+      return { message: 'Quiz still active', canReveal: false }
+    }
+    
+    if (now < studentRevealDeadline) {
+      return { message: 'Student reveal window open', canReveal: false }
+    }
+    
+    if (now > teacherRevealDeadline) {
+      return { message: 'Reveal window closed', canReveal: false }
+    }
+    
+    return { message: '✨ Ready to reveal!', canReveal: true }
   }
 
   return (
@@ -249,10 +288,24 @@ export default function TeacherDashboard() {
                     </div>
 
                     <div className="flex flex-col gap-2">
-                      <Button size="sm" variant="outline">View Details</Button>
-                      {quiz.status === 'ACTIVE' && (
-                        <Button size="sm" variant="secondary">Reveal Answers</Button>
-                      )}
+                      {canReveal(quiz) ? (
+                        <Link href={`/teacher/reveal/${quiz.id}`}>
+                          <Button size="sm" className="whitespace-nowrap">
+                            🔓 Reveal & Grade
+                          </Button>
+                        </Link>
+                      ) : quiz.status === 'ACTIVE' ? (
+                        <Badge variant="info" className="text-xs">
+                          {getRevealStatus(quiz).message}
+                        </Badge>
+                      ) : quiz.status === 'REVEALED' ? (
+                        <Badge variant="success" className="text-xs">
+                          ✓ Completed
+                        </Badge>
+                      ) : null}
+                      <Link href={`/teacher/reveal/${quiz.id}`}>
+                        <Button size="sm" variant="outline">View Details</Button>
+                      </Link>
                     </div>
                   </div>
                 </CardBody>

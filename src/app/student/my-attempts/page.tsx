@@ -254,9 +254,13 @@ export default function MyAttemptsPage() {
                           </div>
 
                           <div className="flex flex-col gap-2">
-                            <Button size="sm" variant="outline">View Details</Button>
+                            <Link href={`/student/reveal/${attempt.id}`}>
+                              <Button size="sm" variant="outline">View Details</Button>
+                            </Link>
                             {attempt.status === 'COMMITTED' && (
-                              <Button size="sm" variant="secondary">Reveal Answers</Button>
+                              <Link href={`/student/reveal/${attempt.id}`}>
+                                <Button size="sm" variant="secondary">Reveal Answers</Button>
+                              </Link>
                             )}
                           </div>
                         </div>

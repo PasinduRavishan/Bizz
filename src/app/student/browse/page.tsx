@@ -45,7 +45,13 @@ export default function BrowseQuizzesPage() {
       const data = await response.json()
 
       if (data.success) {
-        setQuizzes(data.data || [])
+        // Filter out quizzes with passed deadlines
+        const now = new Date()
+        const activeQuizzes = (data.data || []).filter((quiz: Quiz) => {
+          const deadline = new Date(quiz.deadline)
+          return deadline > now
+        })
+        setQuizzes(activeQuizzes)
       } else {
         setError(data.error || 'Failed to fetch quizzes')
       }
@@ -70,13 +76,15 @@ export default function BrowseQuizzesPage() {
     const date = new Date(dateStr)
     const now = new Date()
     const diffMs = date.getTime() - now.getTime()
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+    const diffMinutes = Math.floor(diffMs / (1000 * 60))
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
-    if (diffMs < 0) return 'Ended'
-    if (diffDays > 1) return `${diffDays} days left`
-    if (diffHours > 1) return `${diffHours} hours left`
-    return 'Ending soon'
+    if (diffMs < 0) return 'Expired'
+    if (diffMinutes < 60) return `${diffMinutes}m left`
+    if (diffHours < 24) return `${diffHours}h left`
+    if (diffDays === 1) return '1 day left'
+    return `${diffDays} days left`
   }
 
   const formatSatoshis = (satoshis: string | number) => {
@@ -212,7 +220,7 @@ export default function BrowseQuizzesPage() {
                   {/* Action Button */}
                   <Link href={`/student/take/${quiz.id}`}>
                     <Button className="w-full" size="lg">
-                      Take Quiz
+                      🎯 Take Quiz
                     </Button>
                   </Link>
                 </CardBody>

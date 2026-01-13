@@ -58,10 +58,7 @@ export async function uploadQuestionsToIPFS(questions: QuizQuestion[]): Promise<
 }
 
 /**
- * Fetch questions from IPFS (placeholder implementation)
- *
- * In production, this would fetch from IPFS gateway.
- * For now, questions would need to be stored elsewhere.
+ * Fetch questions from IPFS 
  *
  * @param ipfsHash - IPFS CID
  * @returns Promise resolving to questions array

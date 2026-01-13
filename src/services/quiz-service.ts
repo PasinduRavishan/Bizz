@@ -154,3 +154,151 @@ export async function getQuizAnswers(quizId: string): Promise<string[] | null> {
     return null
   }
 }
+
+// ============================================
+// Teacher Reveal Functions
+// ============================================
+
+export interface RevealQuizParams {
+  quizId: string
+  answers?: string[] // Optional - server fetches from encrypted storage
+  salt?: string // Optional - server fetches from encrypted storage
+}
+
+export interface RevealQuizResult {
+  success: boolean
+  quizId?: string
+  contractRev?: string
+  txId?: string
+  status?: string
+  revealTimestamp?: string
+  scoringResults?: {
+    processed: number
+    passed: number
+    failed: number
+  }
+  error?: string
+}
+
+export interface QuizRevealStatusResult {
+  success: boolean
+  data?: {
+    quizId: string
+    contractId: string
+    status: string
+    title: string | null
+    questionCount: number
+    deadline: string
+    studentRevealDeadline: string
+    teacherRevealDeadline: string
+    canReveal: boolean
+    isRevealed: boolean
+    revealedAnswers: string[] | null
+    reason: string | null
+    attemptStats: {
+      total: number
+      committed: number
+      revealed: number
+      verified: number
+      failed: number
+    }
+    salt: string | null
+  }
+  error?: string
+}
+
+/**
+ * Reveal correct answers for a quiz (teacher action)
+ *
+ * This should be called after student reveal window closes but before
+ * teacher reveal deadline.
+ *
+ * @param params - Reveal parameters with quiz ID, answers, and salt
+ * @returns Result with reveal confirmation and scoring results
+ */
+export async function revealQuizAnswers(
+  params: RevealQuizParams
+): Promise<RevealQuizResult> {
+  try {
+    // Validate inputs on client side
+    if (!params.quizId) {
+      return { success: false, error: 'Quiz ID is required' }
+    }
+
+    console.log('🔓 Calling API to reveal quiz answers...')
+    console.log('  Server will decrypt answers and salt from encrypted storage')
+
+    // Call server API to reveal on blockchain
+    // Server fetches and decrypts answers/salt from encryptedRevealData
+    const response = await fetch(`/api/quizzes/${params.quizId}/reveal`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        // Answers and salt are optional - server decrypts from database
+        ...(params.answers && { answers: params.answers }),
+        ...(params.salt && { salt: params.salt })
+      })
+    })
+
+    const result = await response.json()
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: result.error || 'Failed to reveal answers'
+      }
+    }
+
+    console.log('✅ Quiz answers revealed successfully!')
+    console.log('  TX ID:', result.data?.txId)
+    console.log('  Scoring Results:', result.data?.scoringResults)
+
+    return {
+      success: true,
+      quizId: result.data?.quizId,
+      contractRev: result.data?.contractRev,
+      txId: result.data?.txId,
+      status: result.data?.status,
+      revealTimestamp: result.data?.revealTimestamp,
+      scoringResults: result.data?.scoringResults
+    }
+  } catch (error) {
+    console.error('❌ Failed to reveal quiz answers:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to reveal answers'
+    }
+  }
+}
+
+/**
+ * Get reveal status for a quiz
+ *
+ * @param quizId - Quiz ID (database or contract ID)
+ * @returns Reveal status information including attempt stats
+ */
+export async function getQuizRevealStatus(quizId: string): Promise<QuizRevealStatusResult> {
+  try {
+    const response = await fetch(`/api/quizzes/${quizId}/reveal`)
+    if (!response.ok) {
+      const result = await response.json()
+      return {
+        success: false,
+        error: result.error || 'Failed to get reveal status'
+      }
+    }
+    const data = await response.json()
+    return {
+      success: true,
+      data: data.data
+    }
+  } catch (error) {
+    console.error('Error fetching quiz reveal status:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get reveal status'
+    }
+  }
+}

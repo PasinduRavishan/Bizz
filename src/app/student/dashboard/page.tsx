@@ -22,6 +22,9 @@ interface QuizAttempt {
     questionCount: number
     passThreshold: number
     status: string
+    deadline: string
+    studentRevealDeadline: string
+    teacherRevealDeadline: string
   }
 }
 
@@ -79,12 +82,45 @@ export default function StudentDashboard() {
 
   const getStatusBadge = (status: string) => {
     const variants = {
-      PENDING: 'default',
+      COMMITTED: 'warning',
+      REVEALED: 'info',
       VERIFIED: 'success',
-      REJECTED: 'danger',
+      FAILED: 'danger',
     } as const
 
     return <Badge variant={variants[status as keyof typeof variants] || 'default'}>{status}</Badge>
+  }
+
+  const canReveal = (attempt: QuizAttempt) => {
+    const now = new Date()
+    const deadline = new Date(attempt.quiz.deadline)
+    const studentRevealDeadline = new Date(attempt.quiz.studentRevealDeadline)
+    
+    return (
+      attempt.status === 'COMMITTED' &&
+      now >= deadline &&
+      now <= studentRevealDeadline
+    )
+  }
+
+  const getRevealStatus = (attempt: QuizAttempt) => {
+    const now = new Date()
+    const deadline = new Date(attempt.quiz.deadline)
+    const studentRevealDeadline = new Date(attempt.quiz.studentRevealDeadline)
+    
+    if (attempt.status !== 'COMMITTED') {
+      return { message: attempt.status, canReveal: false }
+    }
+    
+    if (now < deadline) {
+      return { message: 'Quiz deadline not reached', canReveal: false }
+    }
+    
+    if (now > studentRevealDeadline) {
+      return { message: 'Reveal window closed', canReveal: false }
+    }
+    
+    return { message: '✨ Ready to reveal!', canReveal: true }
   }
 
   return (
@@ -242,9 +278,23 @@ export default function StudentDashboard() {
                     </div>
 
                     <div className="flex flex-col gap-2">
-                      <Button size="sm" variant="outline">View Details</Button>
-                      {attempt.status === 'PENDING' && (
-                        <Badge variant="default">Awaiting Verification</Badge>
+                      {canReveal(attempt) ? (
+                        <Link href={`/student/reveal/${attempt.id}`}>
+                          <Button size="sm" className="whitespace-nowrap">
+                            🔓 Reveal Answers
+                          </Button>
+                        </Link>
+                      ) : attempt.status === 'COMMITTED' ? (
+                        <Badge variant="warning" className="text-xs">
+                          {getRevealStatus(attempt).message}
+                        </Badge>
+                      ) : attempt.status === 'REVEALED' ? (
+                        <Badge variant="info" className="text-xs">
+                          ⏳ Awaiting teacher reveal
+                        </Badge>
+                      ) : null}
+                      {attempt.status === 'VERIFIED' && (
+                        <Button size="sm" variant="outline">View Results</Button>
                       )}
                     </div>
                   </div>

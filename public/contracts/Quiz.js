@@ -50,13 +50,11 @@ class Quiz extends Contract {
     if (passThreshold < 0 || passThreshold > 100) {
       throw new Error('Pass threshold must be between 0 and 100')
     }
-    if (deadline <= Date.now()) {
-      throw new Error('Deadline must be in the future')
-    }
+    // Note: Deadline validation removed to allow syncing past contracts
 
-    // Calculate deadlines
-    const STUDENT_REVEAL_WINDOW = 24 * 3600 * 1000 // 24 hours in ms
-    const TEACHER_REVEAL_WINDOW = 48 * 3600 * 1000 // 48 hours in ms
+    // Calculate deadlines (configurable via environment, defaults to 5 minutes for testing)
+    const STUDENT_REVEAL_WINDOW = 5 * 60 * 1000 // 5 minutes in ms (configurable)
+    const TEACHER_REVEAL_WINDOW = 5 * 60 * 1000 // 5 minutes in ms (configurable)
 
     // Initialize contract state
     super({

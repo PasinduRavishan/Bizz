@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { generateSalt, hashAnswers } from '@/lib/crypto'
+import { generateSalt, hashAnswers, encryptQuizRevealData } from '@/lib/crypto'
 import { uploadQuestionsToIPFS } from '@/lib/ipfs'
 import { prisma } from '@/lib/prisma'
 import { getUserWallet } from '@/lib/wallet-service'
@@ -127,12 +127,10 @@ export async function POST(request: NextRequest) {
           if (passThreshold < 0 || passThreshold > 100) {
             throw new Error('Pass threshold must be between 0 and 100')
           }
-          if (deadline <= Date.now()) {
-            throw new Error('Deadline must be in the future')
-          }
+          // Note: Deadline validation removed to allow syncing past contracts
 
-          const STUDENT_REVEAL_WINDOW = 24 * 3600 * 1000
-          const TEACHER_REVEAL_WINDOW = 48 * 3600 * 1000
+          const STUDENT_REVEAL_WINDOW = ${process.env.STUDENT_REVEAL_WINDOW_MINUTES || 5} * 60 * 1000
+          const TEACHER_REVEAL_WINDOW = ${process.env.TEACHER_REVEAL_WINDOW_MINUTES || 5} * 60 * 1000
 
           super({
             _owners: [teacher],
@@ -258,15 +256,26 @@ export async function POST(request: NextRequest) {
         console.log('👤 Updated teacher wallet info')
       }
 
-      // Calculate reveal deadlines
-      const STUDENT_REVEAL_WINDOW = 24 * 3600 * 1000
-      const TEACHER_REVEAL_WINDOW = 48 * 3600 * 1000
+      // Calculate reveal deadlines (from environment variables)
+      const STUDENT_REVEAL_WINDOW = parseInt(process.env.STUDENT_REVEAL_WINDOW_MINUTES || '5') * 60 * 1000
+      const TEACHER_REVEAL_WINDOW = parseInt(process.env.TEACHER_REVEAL_WINDOW_MINUTES || '5') * 60 * 1000
 
       // Store questions WITHOUT correct answers for database (production-safe)
       const questionsForDB = body.questions.map((q) => ({
         question: q.question,
         options: q.options
       }))
+
+      // Encrypt reveal data for secure server-side storage (production-ready)
+      const REVEAL_DATA_KEY = process.env.REVEAL_DATA_KEY || process.env.WALLET_ENCRYPTION_KEY
+      if (!REVEAL_DATA_KEY) {
+        throw new Error('REVEAL_DATA_KEY environment variable is required')
+      }
+
+      const encryptedRevealData = encryptQuizRevealData(
+        { answers: correctAnswers, salt: salt },
+        REVEAL_DATA_KEY
+      )
 
       const createdQuiz = await prisma.quiz.create({
         data: {
@@ -277,6 +286,7 @@ export async function POST(request: NextRequest) {
           questions: questionsForDB,  // Store in database
           questionHashIPFS: questionHashIPFS,
           answerHashes: answerHashes,
+          hashingQuizId: tempQuizId,  // Store for answer verification during reveal
           questionCount: body.questions.length,
           prizePool: BigInt(body.prizePool),
           entryFee: BigInt(body.entryFee),
@@ -286,7 +296,8 @@ export async function POST(request: NextRequest) {
           studentRevealDeadline: new Date(deadline.getTime() + STUDENT_REVEAL_WINDOW),
           teacherRevealDeadline: new Date(deadline.getTime() + STUDENT_REVEAL_WINDOW + TEACHER_REVEAL_WINDOW),
           status: 'ACTIVE',
-          salt: salt
+          salt: salt,
+          encryptedRevealData: encryptedRevealData  // Encrypted answers + salt for reveal
         }
       })
       console.log('💾 Quiz saved to database with questions')

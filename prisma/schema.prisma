@@ -74,6 +74,7 @@ model Quiz {
   questions         Json?              // Full questions stored in database (backup)
   questionHashIPFS  String             // IPFS hash of questions
   answerHashes      String[]           // Array of hashed answers
+  hashingQuizId     String?            // Temp quiz ID used for answer hashing (needed for verification)
   questionCount     Int
   
   // Economics
@@ -91,6 +92,10 @@ model Quiz {
   status            QuizStatus @default(ACTIVE)
   revealedAnswers   String[]           // Actual answers after reveal
   salt              String?            // Salt used in hashing
+
+  // Encrypted reveal data (server-side storage for production)
+  // Stores encrypted JSON: { answers: string[], salt: string }
+  encryptedRevealData  String?
   
   // Metadata
   title             String?            // Optional title (not on chain)
@@ -135,6 +140,10 @@ model QuizAttempt {
   answerCommitment String            // Hash of answers + nonce
   revealedAnswers  String[]          // Actual answers after reveal
   nonce            String?           // Nonce used in commitment
+
+  // Encrypted reveal data (server-side storage for production)
+  // Stores encrypted JSON: { answers: string[], nonce: string }
+  encryptedRevealData  String?
   
   // Results
   score            Int?              // 0-100
