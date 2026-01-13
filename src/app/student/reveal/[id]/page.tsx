@@ -215,7 +215,7 @@ export default function RevealAnswersPage() {
               </p>
             </div>
 
-            <Link href="/student/my-attempts">
+            <Link href="/student/dashboard">
               <Button className="w-full">View All Attempts</Button>
             </Link>
           </CardBody>
@@ -309,7 +309,7 @@ export default function RevealAnswersPage() {
 
               {/* Actions */}
               <div className="flex gap-4">
-                <Link href="/student/my-attempts" className="flex-1">
+                <Link href="/student/dashboard" className="flex-1">
                   <Button variant="outline" className="w-full">Cancel</Button>
                 </Link>
                 <Button
@@ -391,7 +391,7 @@ export default function RevealAnswersPage() {
           </div>
 
           <div className="flex gap-4">
-            <Link href="/student/my-attempts" className="flex-1">
+            <Link href="/student/dashboard" className="flex-1">
               <Button variant="outline" className="w-full">
                 View All Attempts
               </Button>

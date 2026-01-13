@@ -5,7 +5,7 @@
  */
 
 import { getUserWallet } from './wallet-service'
-import { prisma } from './prisma'
+
 
 /**
  * Ensure user has spendable UTXOs for transactions

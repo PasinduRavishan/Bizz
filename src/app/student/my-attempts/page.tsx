@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Card, CardBody } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { useWallet } from '@/contexts/WalletContext'
+import { StudentAttemptDetails } from '@/components/quiz/StudentAttemptDetails'
 
 interface Attempt {
   id: string
@@ -29,6 +30,7 @@ export default function MyAttemptsPage() {
   const [attempts, setAttempts] = useState<Attempt[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(null)
 
   const fetchAttempts = useCallback(async () => {
     if (!address) return
@@ -254,9 +256,19 @@ export default function MyAttemptsPage() {
                           </div>
 
                           <div className="flex flex-col gap-2">
-                            <Link href={`/student/reveal/${attempt.id}`}>
-                              <Button size="sm" variant="outline">View Details</Button>
-                            </Link>
+                            {attempt.status === 'VERIFIED' ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setSelectedAttemptId(attempt.id)}
+                              >
+                                View Details
+                              </Button>
+                            ) : (
+                              <Link href={`/student/reveal/${attempt.id}`}>
+                                <Button size="sm" variant="outline">View Details</Button>
+                              </Link>
+                            )}
                             {attempt.status === 'COMMITTED' && (
                               <Link href={`/student/reveal/${attempt.id}`}>
                                 <Button size="sm" variant="secondary">Reveal Answers</Button>

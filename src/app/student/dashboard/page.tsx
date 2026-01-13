@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Card, CardBody } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { WalletBalance } from '@/components/wallet/WalletBalance'
+import { StudentAttemptDetails } from '@/components/quiz/StudentAttemptDetails'
 
 interface QuizAttempt {
   id: string
@@ -43,6 +44,7 @@ export default function StudentDashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -294,7 +296,13 @@ export default function StudentDashboard() {
                         </Badge>
                       ) : null}
                       {attempt.status === 'VERIFIED' && (
-                        <Button size="sm" variant="outline">View Results</Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setSelectedAttemptId(attempt.id)}
+                        >
+                          View Details
+                        </Button>
                       )}
                     </div>
                   </div>
@@ -334,6 +342,20 @@ export default function StudentDashboard() {
               <Button variant="outline" disabled>Coming Soon</Button>
             </CardBody>
           </Card>
+        </div>
+      )}
+
+      {/* Attempt Details Modal */}
+      {selectedAttemptId && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-900 rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <StudentAttemptDetails
+                attemptId={selectedAttemptId}
+                onClose={() => setSelectedAttemptId(null)}
+              />
+            </div>
+          </div>
         </div>
       )}
     </main>

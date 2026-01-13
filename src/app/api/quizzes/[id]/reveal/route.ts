@@ -229,7 +229,11 @@ export async function POST(
     const scoringResults = await calculateAndUpdateScores(quiz.id, answers)
 
     // Process payments: distribute prizes to winners using contract methods
+    // Wait for the reveal transaction to clear the mempool before deploying new contracts
     console.log('\n💰 Processing prize distribution via contracts...')
+    console.log('  ⏳ Waiting 5 seconds for reveal transaction to propagate...')
+    await new Promise(resolve => setTimeout(resolve, 5000))
+
     let paymentResults
     try {
       const { processCompletePayments } = await import('@/lib/payment-distribution')

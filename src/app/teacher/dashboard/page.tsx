@@ -8,6 +8,7 @@ import { Card, CardBody } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { WalletBalance } from '@/components/wallet/WalletBalance'
 import { PaymentStatus } from '@/components/quiz/PaymentStatus'
+import { QuizFinancialDetails } from '@/components/quiz/QuizFinancialDetails'
 
 interface Quiz {
   id: string
@@ -45,6 +46,7 @@ export default function TeacherDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedQuizForPayment, setSelectedQuizForPayment] = useState<string | null>(null)
+  const [selectedQuizForDetails, setSelectedQuizForDetails] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -314,9 +316,13 @@ export default function TeacherDashboard() {
                           </Button>
                         </>
                       ) : null}
-                      <Link href={`/teacher/reveal/${quiz.id}`}>
-                        <Button size="sm" variant="outline">View Details</Button>
-                      </Link>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setSelectedQuizForDetails(quiz.id)}
+                      >
+                        View Details
+                      </Button>
                     </div>
                   </div>
                 </CardBody>
@@ -340,12 +346,27 @@ export default function TeacherDashboard() {
               </button>
             </div>
             <div className="p-6">
-              <PaymentStatus 
-                quizId={selectedQuizForPayment} 
+              <PaymentStatus
+                quizId={selectedQuizForPayment}
                 onRetry={() => {
                   // Refresh dashboard after retry
                   window.location.reload()
                 }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quiz Financial Details Modal */}
+      {selectedQuizForDetails && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-900 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <QuizFinancialDetails
+                quizId={selectedQuizForDetails}
+                viewerRole="TEACHER"
+                onClose={() => setSelectedQuizForDetails(null)}
               />
             </div>
           </div>
