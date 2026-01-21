@@ -16,7 +16,6 @@ interface RevealStatus {
   title: string | null
   questionCount: number
   deadline: string
-  studentRevealDeadline: string
   teacherRevealDeadline: string
   canReveal: boolean
   isRevealed: boolean
@@ -65,10 +64,10 @@ export default function TeacherRevealPage() {
           return
         }
 
-        // Check if we're still in student reveal window
+        // Check if quiz deadline has passed
         const now = new Date()
-        const studentDeadline = new Date(result.data.studentRevealDeadline)
-        if (now < studentDeadline) {
+        const quizDeadline = new Date(result.data.deadline)
+        if (now < quizDeadline) {
           setCurrentStep('waiting')
           return
         }
@@ -208,7 +207,7 @@ export default function TeacherRevealPage() {
     )
   }
 
-  // Waiting for Student Reveal Window to Close
+  // Waiting for Quiz Deadline
   if (currentStep === 'waiting' && revealStatus) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-zinc-900 flex items-center justify-center">
@@ -218,21 +217,21 @@ export default function TeacherRevealPage() {
               <span className="text-4xl">⏳</span>
             </div>
             <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-              Waiting for Students
+              Quiz Still Active
             </h3>
             <p className="text-gray-600 dark:text-gray-400 mb-4">
-              Students still have time to reveal their answers.
+              Wait for the quiz deadline to reveal answers and grade submissions.
             </p>
 
             <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-6 mb-6">
               <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                Student reveal window closes:
+                Quiz deadline:
               </div>
               <div className="text-xl font-bold text-blue-600">
-                {formatDate(revealStatus.studentRevealDeadline)}
+                {formatDate(revealStatus.deadline)}
               </div>
               <div className="text-sm text-blue-500 mt-1">
-                {getTimeUntil(revealStatus.studentRevealDeadline)}
+                {getTimeUntil(revealStatus.deadline)}
               </div>
             </div>
 
@@ -365,9 +364,9 @@ export default function TeacherRevealPage() {
               <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
                 <div className="grid md:grid-cols-2 gap-4 text-sm">
                   <div>
-                    <span className="text-gray-600 dark:text-gray-400">Student Reveal Window:</span>
+                    <span className="text-gray-600 dark:text-gray-400">Quiz Deadline:</span>
                     <div className="font-semibold text-green-600">
-                      Closed
+                      Passed
                     </div>
                   </div>
                   <div>
@@ -385,7 +384,7 @@ export default function TeacherRevealPage() {
               {/* Attempt Stats */}
               <div className="bg-gray-50 dark:bg-zinc-800 rounded-lg p-4">
                 <h4 className="font-semibold text-gray-900 dark:text-white mb-3">Student Attempts</h4>
-                <div className="grid grid-cols-4 gap-3 text-sm text-center">
+                <div className="grid grid-cols-3 gap-3 text-sm text-center">
                   <div>
                     <div className="text-xl font-bold text-gray-900 dark:text-white">
                       {revealStatus.attemptStats.total}
@@ -393,27 +392,21 @@ export default function TeacherRevealPage() {
                     <div className="text-gray-500 text-xs">Total</div>
                   </div>
                   <div>
-                    <div className="text-xl font-bold text-green-600">
-                      {revealStatus.attemptStats.revealed}
-                    </div>
-                    <div className="text-gray-500 text-xs">Revealed</div>
-                  </div>
-                  <div>
-                    <div className="text-xl font-bold text-yellow-600">
+                    <div className="text-xl font-bold text-blue-600">
                       {revealStatus.attemptStats.committed}
                     </div>
-                    <div className="text-gray-500 text-xs">Unrevealed</div>
+                    <div className="text-gray-500 text-xs">Submitted</div>
                   </div>
                   <div>
-                    <div className="text-xl font-bold text-red-600">
-                      {revealStatus.attemptStats.failed}
+                    <div className="text-xl font-bold text-green-600">
+                      {revealStatus.attemptStats.verified}
                     </div>
-                    <div className="text-gray-500 text-xs">Failed</div>
+                    <div className="text-gray-500 text-xs">Graded</div>
                   </div>
                 </div>
                 {revealStatus.attemptStats.committed > 0 && (
-                  <p className="text-xs text-yellow-600 mt-3">
-                    Students who did not reveal will be marked as failed.
+                  <p className="text-xs text-blue-600 mt-3">
+                    {revealStatus.attemptStats.committed} attempts will be auto-graded when you reveal.
                   </p>
                 )}
               </div>

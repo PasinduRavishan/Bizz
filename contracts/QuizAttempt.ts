@@ -1,0 +1,120 @@
+// TypeScript version for local development (not used for deployment)
+// Bitcoin Computer requires JavaScript without imports
+// For deployment, use the JS version or strip types
+
+// @ts-expect-error - Bitcoin Computer library type definitions issue
+import { Contract } from '@bitcoin-computer/lib'
+
+export class QuizAttempt extends Contract {
+  // Contract base properties
+  _id!: string
+  _rev!: string
+  _owners!: string[]
+  _satoshis!: bigint
+
+  // QuizAttempt properties
+  student!: string
+  quizRef!: string
+  answerCommitment!: string
+  revealedAnswers!: string[] | null
+  nonce!: string | null
+  score!: number | null
+  passed!: boolean | null
+  status!: string
+  submitTimestamp!: number
+  revealTimestamp!: number | null
+  version!: string
+
+  constructor(student: string, quizRef: string, answerCommitment: string, entryFee: bigint) {
+    if (!student) throw new Error('Student public key required')
+    if (!quizRef) throw new Error('Quiz reference required')
+    if (!answerCommitment) throw new Error('Answer commitment required')
+    if (entryFee < BigInt(5000)) {
+      throw new Error('Entry fee must be at least 5,000 satoshis')
+    }
+
+    super({
+      _owners: [student],
+      _satoshis: entryFee,
+      student,
+      quizRef,
+      answerCommitment,
+      revealedAnswers: null,
+      nonce: null,
+      score: null,
+      passed: null,
+      status: 'committed',
+      submitTimestamp: Date.now(),
+      revealTimestamp: null,
+      version: '1.0.0'
+    })
+  }
+
+  reveal(answers: string[], nonce: string): void {
+    if (this.status !== 'committed') {
+      throw new Error('Attempt already revealed or verified')
+    }
+    if (!Array.isArray(answers) || answers.length === 0) {
+      throw new Error('Answers must be a non-empty array')
+    }
+    if (!nonce) {
+      throw new Error('Nonce is required')
+    }
+
+    this.revealedAnswers = answers
+    this.nonce = nonce
+    this.status = 'revealed'
+    this.revealTimestamp = Date.now()
+  }
+
+  verify(score: number, passed: boolean): void {
+    if (this.status !== 'revealed') {
+      throw new Error('Must reveal answers first')
+    }
+
+    this.score = score
+    this.passed = passed
+    this.status = 'verified'
+  }
+
+  fail(): void {
+    this.status = 'failed'
+    this.passed = false
+  }
+
+  claimRefund(quiz: { status: string }): void {
+    // Student can claim refund if:
+    // 1. Quiz is abandoned (teacher never revealed or never distributed)
+    // 2. They haven't claimed refund yet
+    // 3. Caller is the student who owns this attempt
+    if (quiz.status !== 'abandoned') {
+      throw new Error('Cannot claim refund: quiz not abandoned')
+    }
+    if (this.status === 'refunded') {
+      throw new Error('Refund already claimed')
+    }
+    if (!this._owners.includes(this.student)) {
+      throw new Error('Only the student can claim refund')
+    }
+
+    // Mark as refunded and reduce to dust
+    // The actual refund amount is withdrawn by the student wallet
+    this.status = 'refunded'
+    this._satoshis = BigInt(546) // Reduce to dust, rest goes to student
+  }
+
+  getInfo() {
+    return {
+      attemptId: this._id,
+      student: this.student,
+      quizRef: this.quizRef,
+      status: this.status,
+      submitTimestamp: this.submitTimestamp,
+      revealTimestamp: this.revealTimestamp,
+      score: this.score,
+      passed: this.passed,
+      hasRevealed: this.status !== 'committed',
+      revealedAnswers: this.revealedAnswers
+    }
+  }
+}

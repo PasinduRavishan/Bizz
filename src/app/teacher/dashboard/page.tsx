@@ -21,7 +21,6 @@ interface Quiz {
   passThreshold: number
   status: string
   deadline: string
-  studentRevealDeadline: string
   teacherRevealDeadline: string
   createdAt: string
   _count: {

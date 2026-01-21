@@ -24,7 +24,6 @@ interface QuizAttempt {
     passThreshold: number
     status: string
     deadline: string
-    studentRevealDeadline: string
     teacherRevealDeadline: string
   }
 }
