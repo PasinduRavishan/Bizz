@@ -47,7 +47,6 @@ export interface RevealStatusResult {
     status: string
     quizTitle: string | null
     quizDeadline: string
-    studentRevealDeadline: string
     canReveal: boolean
     isRevealed: boolean
     revealedAnswers: string[] | null

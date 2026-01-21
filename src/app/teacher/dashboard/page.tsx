@@ -102,12 +102,12 @@ export default function TeacherDashboard() {
 
   const canReveal = (quiz: Quiz) => {
     const now = new Date()
-    const studentRevealDeadline = new Date(quiz.studentRevealDeadline)
+    const deadline = new Date(quiz.deadline)
     const teacherRevealDeadline = new Date(quiz.teacherRevealDeadline)
     
     return (
       quiz.status === 'ACTIVE' &&
-      now >= studentRevealDeadline &&
+      now >= deadline &&
       now <= teacherRevealDeadline
     )
   }
@@ -115,7 +115,6 @@ export default function TeacherDashboard() {
   const getRevealStatus = (quiz: Quiz) => {
     const now = new Date()
     const deadline = new Date(quiz.deadline)
-    const studentRevealDeadline = new Date(quiz.studentRevealDeadline)
     const teacherRevealDeadline = new Date(quiz.teacherRevealDeadline)
     
     if (quiz.status !== 'ACTIVE') {
@@ -124,10 +123,6 @@ export default function TeacherDashboard() {
     
     if (now < deadline) {
       return { message: 'Quiz still active', canReveal: false }
-    }
-    
-    if (now < studentRevealDeadline) {
-      return { message: 'Student reveal window open', canReveal: false }
     }
     
     if (now > teacherRevealDeadline) {

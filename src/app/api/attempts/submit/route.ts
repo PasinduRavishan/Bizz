@@ -291,6 +291,7 @@ export async function POST(request: NextRequest) {
           data: {
             contractId: attempt._id,
             contractRev: attempt._rev,
+            moduleSpecifier: moduleSpecifier,  // ✅ Store module specifier for reveal
             studentId: session.user.id,
             quizId: quiz.id,
             answerCommitment: answerCommitment,

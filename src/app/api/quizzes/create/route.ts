@@ -23,12 +23,11 @@ interface CreateQuizRequest {
   deadline: string
   title?: string
   description?: string
-  teacherPublicKey?: string // Optional - from wallet if connected
+  teacherPublicKey?: string
 }
 
 export async function POST(request: NextRequest) {
   try {
-    // Check authentication
     const session = await getServerSession(authOptions)
     if (!session || !session.user) {
       return NextResponse.json(
@@ -85,7 +84,6 @@ export async function POST(request: NextRequest) {
     // @ts-expect-error - Bitcoin Computer lib doesn't have type definitions
     await import('@bitcoin-computer/lib')
 
-    // Get user's custodial wallet
     console.log('🔑 Getting teacher custodial wallet...')
     const computer = await getUserWallet(session.user.id)
     const teacherPublicKey = computer.getPublicKey()
@@ -110,10 +108,54 @@ export async function POST(request: NextRequest) {
 
     const questionHashIPFS = await uploadQuestionsToIPFS(questionsForIPFS)
 
-    // Define Quiz contract inline (pure JavaScript, no imports)
+    // ✅ UPDATED: Payment class MUST be in the same module as Quiz
+    // This allows Quiz.distributePrizes() to create Payment contracts FROM Quiz's satoshis
     const QuizContract = `
+      export class Payment extends Contract {
+        constructor(recipient, amount, purpose, reference) {
+          if (!recipient) throw new Error('Recipient required')
+          if (amount < 546n) throw new Error('Amount must be at least 546 satoshis')
+          if (!purpose) throw new Error('Purpose required')
+
+          super({
+            _owners: [recipient],
+            _satoshis: amount,
+            recipient,
+            amount,
+            purpose,
+            reference,
+            status: 'unclaimed',
+            createdAt: Date.now(),
+            claimedAt: null
+          })
+        }
+
+        claim() {
+          if (this.status === 'claimed') {
+            throw new Error('Payment already claimed')
+          }
+          this._satoshis = 546n
+          this.status = 'claimed'
+          this.claimedAt = Date.now()
+        }
+
+        getInfo() {
+          return {
+            paymentId: this._id,
+            recipient: this.recipient,
+            amount: this.amount,
+            purpose: this.purpose,
+            reference: this.reference,
+            status: this.status,
+            createdAt: this.createdAt,
+            claimedAt: this.claimedAt,
+            canClaim: this.status === 'unclaimed'
+          }
+        }
+      }
+
       export class Quiz extends Contract {
-        constructor(teacher, questionHashIPFS, answerHashes, prizePool, entryFee, passThreshold, deadline) {
+        constructor(teacher, questionHashIPFS, answerHashes, prizePool, entryFee, passThreshold, deadline, teacherRevealDeadline) {
           if (!teacher) throw new Error('Teacher public key required')
           if (!questionHashIPFS) throw new Error('Question hash required')
           if (!Array.isArray(answerHashes) || answerHashes.length === 0) {
@@ -128,10 +170,6 @@ export async function POST(request: NextRequest) {
           if (passThreshold < 0 || passThreshold > 100) {
             throw new Error('Pass threshold must be between 0 and 100')
           }
-          // Note: Deadline validation removed to allow syncing past contracts
-
-          const STUDENT_REVEAL_WINDOW = ${process.env.STUDENT_REVEAL_WINDOW_MINUTES || 5} * 60 * 1000
-          const TEACHER_REVEAL_WINDOW = ${process.env.TEACHER_REVEAL_WINDOW_MINUTES || 5} * 60 * 1000
 
           super({
             _owners: [teacher],
@@ -145,8 +183,7 @@ export async function POST(request: NextRequest) {
             passThreshold: passThreshold,
             platformFee: 0.02,
             deadline: deadline,
-            studentRevealDeadline: deadline + STUDENT_REVEAL_WINDOW,
-            teacherRevealDeadline: deadline + STUDENT_REVEAL_WINDOW + TEACHER_REVEAL_WINDOW,
+            teacherRevealDeadline: teacherRevealDeadline,
             status: 'active',
             revealedAnswers: null,
             salt: null,
@@ -160,8 +197,8 @@ export async function POST(request: NextRequest) {
           if (!this._owners.includes(this.teacher)) {
             throw new Error('Only teacher can reveal answers')
           }
-          if (Date.now() < this.studentRevealDeadline) {
-            throw new Error('Must wait for student reveal window to close')
+          if (Date.now() < this.deadline) {
+            throw new Error('Quiz is still active')
           }
           if (Date.now() > this.teacherRevealDeadline) {
             throw new Error('Teacher reveal deadline has passed')
@@ -175,6 +212,57 @@ export async function POST(request: NextRequest) {
           this.revealedAnswers = answers
           this.salt = salt
           this.status = 'revealed'
+        }
+
+        async distributePrizes(winners) {
+          if (this.status !== 'revealed') {
+            throw new Error('Quiz must be revealed first')
+          }
+          if (!this._owners.includes(this.teacher)) {
+            throw new Error('Only teacher can distribute prizes')
+          }
+          if (!Array.isArray(winners) || winners.length === 0) {
+            this.status = 'completed'
+            return []
+          }
+
+          // Payment class is in the same module, no need to import
+          const payments = []
+          let totalDistributed = BigInt(0)
+
+          // Calculate prize per winner
+          const totalPrize = this._satoshis - BigInt(546)
+          const prizePerWinner = totalPrize / BigInt(winners.length)
+
+          // Create Payment contracts using Quiz's satoshis
+          for (const winner of winners) {
+            const payment = new Payment(
+              winner.student,
+              prizePerWinner,
+              \`Quiz Prize - \${this.questionHashIPFS}\`,
+              this._id
+            )
+            payments.push(payment._rev)
+            totalDistributed += prizePerWinner
+          }
+
+          // Reduce Quiz satoshis by distributed amount
+          this._satoshis = this._satoshis - totalDistributed
+          this.winners = winners.map((w, i) => ({
+            ...w,
+            prizeAmount: prizePerWinner.toString(),
+            paymentRev: payments[i]
+          }))
+          this.status = 'completed'
+
+          return payments
+        }
+
+        markDistributionComplete() {
+          if (this.status !== 'distributing') {
+            throw new Error('Quiz must be in distributing status')
+          }
+          this.status = 'completed'
         }
 
         complete(winners) {
@@ -206,7 +294,6 @@ export async function POST(request: NextRequest) {
             prizePool: this._satoshis,
             passThreshold: this.passThreshold,
             deadline: this.deadline,
-            studentRevealDeadline: this.studentRevealDeadline,
             teacherRevealDeadline: this.teacherRevealDeadline,
             status: this.status,
             createdAt: this.createdAt
@@ -215,20 +302,15 @@ export async function POST(request: NextRequest) {
       }
     `
 
-    // Ensure wallet has spendable UTXOs before deploying
-    // Note: On regtest, if balance exists but no UTXOs (all locked in contracts),
-    // we skip the check and let deployment proceed with contract-locked funds
     console.log('💰 Ensuring wallet has spendable UTXOs...')
     try {
       const { balance } = await computer.getBalance()
-      const hasBalance = balance > BigInt(body.prizePool + 50000) // Prize pool + buffer for fees
+      const hasBalance = balance > BigInt(body.prizePool + 50000)
       
-      // Skip UTXO check if wallet has sufficient balance (even if locked in contracts)
-      // This is a workaround for regtest where faucet creates contract-locked funds
       await ensureWalletHasUTXOs(
         session.user.id, 
         100000,
-        hasBalance // Skip check if has balance
+        hasBalance
       )
     } catch (fundingError) {
       console.error('❌ Wallet funding check failed:', fundingError)
@@ -243,17 +325,90 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('📦 Deploying Quiz contract module...')
-    const moduleSpecifier = await computer.deploy(QuizContract)
+
+    // Helper function for mempool retry
+    async function withMempoolRetry<T>(
+      operation: () => Promise<T>,
+      operationName: string,
+      maxRetries: number = 5
+    ): Promise<T> {
+      let lastError: Error | null = null
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          return await operation()
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error))
+          const isMempoolConflict = lastError.message.includes('txn-mempool-conflict')
+          const isTooLongChain = lastError.message.includes('too-long-mempool-chain')
+
+          // Special handling for too-long-mempool-chain - needs longer waits
+          if (isTooLongChain) {
+            if (attempt === maxRetries) {
+              console.error(`\n⚠️  MEMPOOL ANCESTOR LIMIT REACHED`)
+              console.error(`Bitcoin allows maximum 25 unconfirmed transactions in a chain.`)
+              console.error(`You have too many pending transactions. Solutions:`)
+              console.error(`  1. Wait 10-20 minutes for blockchain confirmations`)
+              console.error(`  2. Check mempool.space for your address to see pending txs`)
+              console.error(`  3. Avoid rapid transaction creation (wait between operations)`)
+              throw new Error(`Mempool ancestor limit (25) exceeded. Please wait 10-20 minutes for pending transactions to confirm before creating new contracts.`)
+            }
+            
+            // Longer delays for ancestor chain issues (15s, 30s, 60s, 120s, 240s)
+            const delayMs = 15000 * Math.pow(2, attempt - 1)
+            console.log(`  ⏳ ${operationName}: TOO MANY UNCONFIRMED ANCESTORS, waiting ${delayMs/1000}s for blockchain confirmations... (${attempt}/${maxRetries})`)
+            await new Promise(resolve => setTimeout(resolve, delayMs))
+            continue
+          }
+
+          if (isMempoolConflict) {
+            if (attempt === maxRetries) {
+              throw lastError
+            }
+            
+            // Standard mempool conflict delays (3s, 6s, 12s, 24s, 48s)
+            const delayMs = 3000 * Math.pow(2, attempt - 1)
+            console.log(`  ⏳ ${operationName}: mempool conflict, waiting ${delayMs/1000}s before retry ${attempt + 1}/${maxRetries}...`)
+            await new Promise(resolve => setTimeout(resolve, delayMs))
+            continue
+          }
+
+          // Not a mempool issue - throw immediately
+          throw lastError
+        }
+      }
+
+      throw lastError
+    }
+
+    const moduleSpecifier = await withMempoolRetry(
+      () => computer.deploy(QuizContract),
+      'Deploy Quiz module',
+      5
+    )
     console.log('✅ Module deployed:', moduleSpecifier)
 
     console.log('🎓 Creating quiz instance from module...')
-    
-    const { tx, effect } = await computer.encode({
-      mod: moduleSpecifier,
-      exp: `new Quiz("${teacherPublicKey}", "${questionHashIPFS}", ${JSON.stringify(answerHashes)}, BigInt(${body.prizePool}), BigInt(${body.entryFee}), ${body.passThreshold}, ${deadline.getTime()})`
-    })
 
-    const txId = await computer.broadcast(tx)
+    // Calculate teacher reveal deadline
+    const TEACHER_REVEAL_WINDOW = parseInt(process.env.TEACHER_REVEAL_WINDOW_MINUTES || '5') * 60 * 1000
+    const teacherRevealDeadline = deadline.getTime() + TEACHER_REVEAL_WINDOW
+
+    const encodeResult = await withMempoolRetry(
+      () => computer.encode({
+        mod: moduleSpecifier,
+        exp: `new Quiz("${teacherPublicKey}", "${questionHashIPFS}", ${JSON.stringify(answerHashes)}, BigInt(${body.prizePool}), BigInt(${body.entryFee}), ${body.passThreshold}, ${deadline.getTime()}, ${teacherRevealDeadline})`
+      }),
+      'Create Quiz instance',
+      5
+    )
+    const { tx, effect } = encodeResult as { tx: any, effect: any }
+
+    const txId = await withMempoolRetry(
+      () => computer.broadcast(tx),
+      'Broadcast Quiz creation',
+      5
+    )
     const quiz = effect.res as { _id: string; _rev: string }
 
     console.log('✅ Quiz created!')
@@ -261,9 +416,7 @@ export async function POST(request: NextRequest) {
     console.log('  Contract Rev:', quiz._rev)
     console.log('  TX ID:', txId)
 
-    // Save to database immediately (don't wait for indexer)
     try {
-      // Use authenticated user from session
       const teacher = await prisma.user.findUnique({
         where: { id: session.user.id }
       })
@@ -272,7 +425,6 @@ export async function POST(request: NextRequest) {
         throw new Error('Teacher user not found')
       }
 
-      // Update user's publicKey if not already set
       if (!teacher.publicKey) {
         await prisma.user.update({
           where: { id: teacher.id },
@@ -284,17 +436,13 @@ export async function POST(request: NextRequest) {
         console.log('👤 Updated teacher wallet info')
       }
 
-      // Calculate reveal deadlines (from environment variables)
-      const STUDENT_REVEAL_WINDOW = parseInt(process.env.STUDENT_REVEAL_WINDOW_MINUTES || '5') * 60 * 1000
       const TEACHER_REVEAL_WINDOW = parseInt(process.env.TEACHER_REVEAL_WINDOW_MINUTES || '5') * 60 * 1000
 
-      // Store questions WITHOUT correct answers for database (production-safe)
       const questionsForDB = body.questions.map((q) => ({
         question: q.question,
         options: q.options
       }))
 
-      // Encrypt reveal data for secure server-side storage (production-ready)
       const REVEAL_DATA_KEY = process.env.REVEAL_DATA_KEY || process.env.WALLET_ENCRYPTION_KEY
       if (!REVEAL_DATA_KEY) {
         throw new Error('REVEAL_DATA_KEY environment variable is required')
@@ -311,21 +459,20 @@ export async function POST(request: NextRequest) {
           contractRev: quiz._rev,
           teacherId: session.user.id,
           title: body.title || null,
-          questions: questionsForDB,  // Store in database
+          questions: questionsForDB,
           questionHashIPFS: questionHashIPFS,
           answerHashes: answerHashes,
-          hashingQuizId: tempQuizId,  // Store for answer verification during reveal
+          hashingQuizId: tempQuizId,
           questionCount: body.questions.length,
           prizePool: BigInt(body.prizePool),
           entryFee: BigInt(body.entryFee),
           passThreshold: body.passThreshold,
           platformFee: 0.02,
           deadline: deadline,
-          studentRevealDeadline: new Date(deadline.getTime() + STUDENT_REVEAL_WINDOW),
-          teacherRevealDeadline: new Date(deadline.getTime() + STUDENT_REVEAL_WINDOW + TEACHER_REVEAL_WINDOW),
+          teacherRevealDeadline: new Date(deadline.getTime() + TEACHER_REVEAL_WINDOW),
           status: 'ACTIVE',
           salt: salt,
-          encryptedRevealData: encryptedRevealData  // Encrypted answers + salt for reveal
+          encryptedRevealData: encryptedRevealData
         }
       })
       console.log('💾 Quiz saved to database with questions')

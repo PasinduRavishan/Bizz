@@ -224,7 +224,9 @@ export default function MyAttemptsPage() {
                               <div>
                                 <span className="text-gray-600 dark:text-gray-400">Status:</span>
                                 <span className="ml-2 font-medium text-gray-900 dark:text-white capitalize">
-                                  {attempt.status.toLowerCase()}
+                                  {attempt.status === 'COMMITTED'
+                                    ? 'Waiting for teacher to reveal answers...'
+                                    : attempt.status.toLowerCase()}
                                 </span>
                               </div>
                               {attempt.score !== null && (
@@ -256,7 +258,7 @@ export default function MyAttemptsPage() {
                           </div>
 
                           <div className="flex flex-col gap-2">
-                            {attempt.status === 'VERIFIED' ? (
+                            {attempt.status === 'VERIFIED' && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -264,15 +266,6 @@ export default function MyAttemptsPage() {
                               >
                                 View Details
                               </Button>
-                            ) : (
-                              <Link href={`/student/reveal/${attempt.id}`}>
-                                <Button size="sm" variant="outline">View Details</Button>
-                              </Link>
-                            )}
-                            {attempt.status === 'COMMITTED' && (
-                              <Link href={`/student/reveal/${attempt.id}`}>
-                                <Button size="sm" variant="secondary">Reveal Answers</Button>
-                              </Link>
                             )}
                           </div>
                         </div>

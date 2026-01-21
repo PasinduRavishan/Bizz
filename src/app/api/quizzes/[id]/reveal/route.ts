@@ -89,14 +89,14 @@ export async function POST(
       )
     }
 
-    // Check timing - student reveal deadline must have passed
+    // Check timing - quiz deadline must have passed
     const now = new Date()
-    if (now < quiz.studentRevealDeadline) {
-      const remainingTime = Math.ceil((quiz.studentRevealDeadline.getTime() - now.getTime()) / (1000 * 60))
+    if (now < quiz.deadline) {
+      const remainingTime = Math.ceil((quiz.deadline.getTime() - now.getTime()) / (1000 * 60))
       return NextResponse.json(
         {
           success: false,
-          error: `Student reveal window is still open. Please wait ${remainingTime} minutes before revealing answers.`
+          error: `Quiz is still active. Please wait ${remainingTime} minutes after the deadline to reveal answers.`
         },
         { status: 400 }
       )
@@ -192,25 +192,44 @@ export async function POST(
       )
     }
 
-    console.log('✅ Contract synced, calling revealAnswers method...')
-    console.log('  Contract status:', quizContract.status)
+    console.log('✅ Contract synced')
+    console.log('  Current status:', quizContract.status)
+    console.log('  Current rev:', quizContract._rev)
 
-    // Call revealAnswers method on contract (Bitcoin Computer pattern: direct call)
-    // This mutates the contract state on-chain
-    quizContract.revealAnswers(answers, salt)
-    
-    console.log('✅ RevealAnswers method called, waiting for mutation to complete...')
-    
-    // Wait a moment for the mutation to process
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    
-    // Sync again to get updated state
-    const updatedContract = await computer.sync(quiz.contractRev)
-    console.log('✅ Contract updated! Status:', updatedContract.status)
-    console.log('  Revealed answers:', updatedContract.revealedAnswers)
-    
-    // Get the transaction ID from the contract's _rev
-    const txId = updatedContract._rev.split('_')[0]
+    // Call revealAnswers method - it's synchronous, modifies contract state
+    console.log('🔓 Calling revealAnswers method on contract...')
+
+    let updatedRev: string
+    let txId: string
+
+    try {
+      // revealAnswers is NOT async - call it synchronously
+      quizContract.revealAnswers(answers, salt)
+
+      console.log('✅ RevealAnswers method called')
+      console.log('  Waiting 3 seconds for transaction to process...')
+
+      // Wait for mutation to complete
+      await new Promise(resolve => setTimeout(resolve, 3000))
+
+      // Sync again to get updated state with new _rev
+      const updatedContract = await computer.sync(quiz.contractRev)
+      console.log('✅ Contract synced after reveal')
+      console.log('  New status:', updatedContract.status)
+      console.log('  Revealed answers stored:', updatedContract.revealedAnswers ? 'yes' : 'no')
+
+      updatedRev = updatedContract._rev
+      txId = updatedRev.split(':')[0]
+
+      console.log('✅ Contract updated!')
+      console.log('  New rev:', updatedRev)
+      console.log('  Transaction ID:', txId)
+    } catch (revealError) {
+      console.error('❌ RevealAnswers method failed:', revealError)
+      throw new Error(`Failed to call revealAnswers on contract: ${revealError instanceof Error ? revealError.message : 'Unknown error'}`)
+    }
+    console.log('  New status:', quizContract.status)
+    console.log('  Revealed answers stored:', quizContract.revealedAnswers ? 'yes' : 'no')
 
     // Update database
     await prisma.quiz.update({
@@ -219,7 +238,7 @@ export async function POST(
         status: 'REVEALED',
         revealedAnswers: answers,
         salt: salt,
-        contractRev: updatedContract._rev
+        contractRev: updatedRev
       }
     })
 
@@ -229,15 +248,15 @@ export async function POST(
     const scoringResults = await calculateAndUpdateScores(quiz.id, answers)
 
     // Process payments: distribute prizes to winners using contract methods
-    // Wait for the reveal transaction to clear the mempool before deploying new contracts
+    // Pass the UPDATED revision (with status 'revealed') to payment distribution
+    // Payment distribution will poll for confirmed 'revealed' status
     console.log('\n💰 Processing prize distribution via contracts...')
-    console.log('  ⏳ Waiting 5 seconds for reveal transaction to propagate...')
-    await new Promise(resolve => setTimeout(resolve, 5000))
 
     let paymentResults
     try {
       const { processCompletePayments } = await import('@/lib/payment-distribution')
-      paymentResults = await processCompletePayments(quiz.id)
+      // Pass updatedRev so payment distribution uses the REVEALED quiz contract
+      paymentResults = await processCompletePayments(quiz.id, updatedRev)
       console.log('✅ Complete payment processing done!')
     } catch (paymentError) {
       console.error('⚠️ Payment processing failed:', paymentError)
@@ -268,7 +287,7 @@ export async function POST(
       message: 'Quiz answers revealed successfully',
       data: {
         quizId: quiz.id,
-        contractRev: updatedContract._rev,
+        contractRev: updatedRev,
         txId: txId,
         status: 'REVEALED',
         revealTimestamp: new Date().toISOString(),
@@ -290,14 +309,15 @@ export async function POST(
 }
 
 /**
- * Calculate and update scores for all revealed attempts
+ * Calculate and update scores for all committed attempts
+ * This auto-scores attempts by decrypting their answers from server storage
  */
 async function calculateAndUpdateScores(quizId: string, correctAnswers: string[]) {
   const quiz = await prisma.quiz.findUnique({
     where: { id: quizId },
     include: {
       attempts: {
-        where: { status: 'REVEALED' }
+        where: { status: 'COMMITTED' }  // Process COMMITTED attempts (no student reveal needed)
       }
     }
   })
@@ -309,39 +329,87 @@ async function calculateAndUpdateScores(quizId: string, correctAnswers: string[]
   let passed = 0
   let failed = 0
 
+  // Get decryption key for server-side encrypted answers
+  const REVEAL_DATA_KEY = process.env.REVEAL_DATA_KEY || process.env.WALLET_ENCRYPTION_KEY
+  if (!REVEAL_DATA_KEY) {
+    console.error('❌ REVEAL_DATA_KEY not configured - cannot decrypt student answers')
+    return { processed: 0, passed: 0, failed: 0 }
+  }
+
+  const { decryptAttemptRevealData, verifyCommitment } = await import('@/lib/crypto')
+
   for (const attempt of quiz.attempts) {
-    if (!attempt.revealedAnswers || attempt.revealedAnswers.length === 0) {
-      continue
-    }
+    try {
+      // Access the attempt with encryptedRevealData field
+      const attemptWithEncrypted = attempt as typeof attempt & { encryptedRevealData?: string }
 
-    // Calculate score
-    let correctCount = 0
-    for (let i = 0; i < correctAnswers.length; i++) {
-      if (attempt.revealedAnswers[i] === correctAnswers[i]) {
-        correctCount++
+      if (!attemptWithEncrypted.encryptedRevealData) {
+        console.log(`  ⚠️ Attempt ${attempt.id}: No encrypted reveal data - marking as FAILED`)
+        await prisma.quizAttempt.update({
+          where: { id: attempt.id },
+          data: { status: 'FAILED' }
+        })
+        failed++
+        continue
       }
-    }
 
-    const score = Math.round((correctCount / correctAnswers.length) * 100)
-    const didPass = score >= quiz.passThreshold
+      // Decrypt the student's answers from server storage
+      const { answers, nonce } = decryptAttemptRevealData(
+        attemptWithEncrypted.encryptedRevealData,
+        REVEAL_DATA_KEY
+      )
 
-    if (didPass) {
-      passed++
-    } else {
+      // Verify the commitment hash matches (prevents tampering)
+      if (!verifyCommitment(answers, nonce, attempt.answerCommitment)) {
+        console.log(`  ❌ Attempt ${attempt.id}: Commitment verification FAILED - marking as FAILED`)
+        await prisma.quizAttempt.update({
+          where: { id: attempt.id },
+          data: { status: 'FAILED' }
+        })
+        failed++
+        continue
+      }
+
+      // Calculate score
+      let correctCount = 0
+      for (let i = 0; i < correctAnswers.length; i++) {
+        if (answers[i] === correctAnswers[i]) {
+          correctCount++
+        }
+      }
+
+      const score = Math.round((correctCount / correctAnswers.length) * 100)
+      const didPass = score >= quiz.passThreshold
+
+      if (didPass) {
+        passed++
+      } else {
+        failed++
+      }
+
+      // Update attempt with score and revealed data
+      await prisma.quizAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          score,
+          passed: didPass,
+          status: 'VERIFIED',
+          revealedAnswers: answers,  // Store decrypted answers
+          nonce: nonce,
+          revealTimestamp: new Date()
+        }
+      })
+
+      console.log(`  📊 Attempt ${attempt.id}: Score ${score}% - ${didPass ? 'PASSED' : 'FAILED'}`)
+
+    } catch (decryptError) {
+      console.error(`  ❌ Failed to decrypt/score attempt ${attempt.id}:`, decryptError)
+      await prisma.quizAttempt.update({
+        where: { id: attempt.id },
+        data: { status: 'FAILED' }
+      })
       failed++
     }
-
-    // Update attempt with score
-    await prisma.quizAttempt.update({
-      where: { id: attempt.id },
-      data: {
-        score,
-        passed: didPass,
-        status: 'VERIFIED'
-      }
-    })
-
-    console.log(`  📊 Attempt ${attempt.id}: Score ${score}% - ${didPass ? 'PASSED' : 'FAILED'}`)
   }
 
   // Create winner records for those who passed
@@ -431,7 +499,7 @@ export async function GET(
     const canReveal =
       isOwner &&
       quiz.status === 'ACTIVE' &&
-      now >= quiz.studentRevealDeadline &&
+      now >= quiz.deadline &&
       now <= quiz.teacherRevealDeadline
 
     const attemptStats = {
@@ -449,7 +517,6 @@ export async function GET(
       title: quiz.title,
       questionCount: quiz.questionCount,
       deadline: quiz.deadline.toISOString(),
-      studentRevealDeadline: quiz.studentRevealDeadline.toISOString(),
       teacherRevealDeadline: quiz.teacherRevealDeadline.toISOString(),
       canReveal,
       isRevealed: quiz.status !== 'ACTIVE',
@@ -475,7 +542,7 @@ export async function GET(
 }
 
 function getRevealBlockReason(
-  quiz: { status: string; studentRevealDeadline: Date; teacherRevealDeadline: Date },
+  quiz: { status: string; deadline: Date; teacherRevealDeadline: Date },
   now: Date,
   isOwner: boolean
 ): string {
@@ -485,8 +552,8 @@ function getRevealBlockReason(
   if (quiz.status !== 'ACTIVE') {
     return `Quiz already ${quiz.status.toLowerCase()}`
   }
-  if (now < quiz.studentRevealDeadline) {
-    return 'Student reveal window is still open'
+  if (now < quiz.deadline) {
+    return 'Quiz is still active - wait for deadline'
   }
   if (now > quiz.teacherRevealDeadline) {
     return 'Teacher reveal deadline has passed'

@@ -49,7 +49,6 @@ export async function GET(
             prizePool: true,
             entryFee: true,
             deadline: true,
-            studentRevealDeadline: true,
             teacherRevealDeadline: true,
             _count: {
               select: {

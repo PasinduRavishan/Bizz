@@ -22,7 +22,7 @@ class QuizAttempt extends Contract {
     if (!student) throw new Error('Student public key required')
     if (!quizRef) throw new Error('Quiz reference required')
     if (!answerCommitment) throw new Error('Answer commitment required')
-    if (entryFee < 5000n) {
+    if (entryFee < BigInt(5000)) {
       throw new Error('Entry fee must be at least 5,000 satoshis')
     }
 
@@ -123,8 +123,8 @@ class QuizAttempt extends Contract {
       throw new Error('Attempt must be verified or failed first')
     }
 
-    // Import Payment contract
-    const Payment = (await import('./Payment.js')).default
+    // Import Payment contract from Quiz.js
+    const { Payment } = await import('./Quiz.js')
 
     const entryFee = this._satoshis
     const platformFeeAmount = BigInt(Math.floor(Number(entryFee) * platformFeePercent))
@@ -139,7 +139,7 @@ class QuizAttempt extends Contract {
     )
 
     // Reduce attempt contract to dust (fee collected)
-    this._satoshis = 546n
+    this._satoshis = BigInt(546)
     this.status = 'fee_collected'
 
     return {

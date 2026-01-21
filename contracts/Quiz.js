@@ -1,5 +1,53 @@
 import { Contract } from '@bitcoin-computer/lib'
 
+
+
+
+
+class Payment extends Contract {
+  constructor(recipient, amount, purpose, reference) {
+    if (!recipient) throw new Error('Recipient required')
+    if (amount < BigInt(546)) throw new Error('Amount must be at least 546 satoshis')
+    if (!purpose) throw new Error('Purpose required')
+
+    super({
+      _owners: [recipient],
+      _satoshis: amount,
+      recipient,
+      amount,
+      purpose,
+      reference,
+      status: 'unclaimed',
+      createdAt: Date.now(),
+      claimedAt: null
+    })
+  }
+
+  claim() {
+    if (this.status === 'claimed') {
+      throw new Error('Payment already claimed')
+    }
+    this._satoshis = BigInt(546)
+    this.status = 'claimed'
+    this.claimedAt = Date.now()
+  }
+
+  getInfo() {
+    return {
+      paymentId: this._id,
+      recipient: this.recipient,
+      amount: this.amount,
+      purpose: this.purpose,
+      reference: this.reference,
+      status: this.status,
+      createdAt: this.createdAt,
+      claimedAt: this.claimedAt,
+      canClaim: this.status === 'unclaimed'
+    }
+  }
+}
+
+
 /**
  * Quiz Smart Contract
  * 
@@ -41,10 +89,10 @@ class Quiz extends Contract {
     if (!Array.isArray(answerHashes) || answerHashes.length === 0) {
       throw new Error('Answer hashes must be a non-empty array')
     }
-    if (prizePool < 10000n) {
+    if (prizePool < BigInt(10000)) {
       throw new Error('Prize pool must be at least 10,000 satoshis')
     }
-    if (entryFee < 5000n) {
+    if (entryFee < BigInt(5000)) {
       throw new Error('Entry fee must be at least 5,000 satoshis')
     }
     if (passThreshold < 0 || passThreshold > 100) {
@@ -55,7 +103,6 @@ class Quiz extends Contract {
     }
 
     // Calculate deadlines
-    const STUDENT_REVEAL_WINDOW = 24 * 3600 * 1000 // 24 hours in ms
     const TEACHER_REVEAL_WINDOW = 48 * 3600 * 1000 // 48 hours in ms
 
     // Initialize contract state
@@ -77,8 +124,7 @@ class Quiz extends Contract {
       
       // Timing
       deadline,
-      studentRevealDeadline: deadline + STUDENT_REVEAL_WINDOW,
-      teacherRevealDeadline: deadline + STUDENT_REVEAL_WINDOW + TEACHER_REVEAL_WINDOW,
+      teacherRevealDeadline: deadline + TEACHER_REVEAL_WINDOW,
       
       // State tracking
       status: 'active',                // active | revealed | completed | refunded
@@ -107,7 +153,6 @@ class Quiz extends Contract {
       prizePool: this._satoshis,
       passThreshold: this.passThreshold,
       deadline: this.deadline,
-      studentRevealDeadline: this.studentRevealDeadline,
       teacherRevealDeadline: this.teacherRevealDeadline,
       status: this.status,
       createdAt: this.createdAt,
@@ -134,8 +179,8 @@ class Quiz extends Contract {
     }
 
     // Check timing
-    if (Date.now() < this.studentRevealDeadline) {
-      throw new Error('Must wait for student reveal window to close')
+    if (Date.now() < this.deadline) {
+      throw new Error('Quiz is still active')
     }
     if (Date.now() > this.teacherRevealDeadline) {
       throw new Error('Teacher reveal deadline has passed')
@@ -168,47 +213,109 @@ class Quiz extends Contract {
    * @param {Array} winners - Array of {student: string, amount: bigint}
    * @returns {Array} Array of Payment contract revs
    */
+  // async distributePrizes(winners) {
+  //   if (this.status !== 'revealed') {
+  //     throw new Error('Quiz must be revealed first')
+  //   }
+
+  //   // Only teacher can distribute
+  //   if (!this._owners.includes(this.teacher)) {
+  //     throw new Error('Only teacher can distribute prizes')
+  //   }
+
+  //   if (!Array.isArray(winners) || winners.length === 0) {
+  //     // No winners - keep prize pool
+  //     this.status = 'completed'
+  //     return []
+  //   }
+
+  //   // Import Payment contract dynamically
+  //   const Payment = (await import('./Payment.js')).default
+
+  //   const payments = []
+  //   let totalDistributed = 0n
+
+  //   // Create a Payment contract for each winner
+  //   for (const winner of winners) {
+  //     const payment = new Payment(
+  //       winner.student,
+  //       winner.amount,
+  //       `Quiz Prize - ${this.questionHashIPFS}`,
+  //       this._id
+  //     )
+  //     payments.push(payment._rev)
+  //     totalDistributed += winner.amount
+  //   }
+
+  //   // Reduce quiz contract satoshis by distributed amount
+  //   this._satoshis = this._satoshis - totalDistributed
+  //   this.winners = winners
+  //   this.status = 'completed'
+
+  //   return payments
+  // }
+
   async distributePrizes(winners) {
     if (this.status !== 'revealed') {
       throw new Error('Quiz must be revealed first')
     }
 
-    // Only teacher can distribute
     if (!this._owners.includes(this.teacher)) {
       throw new Error('Only teacher can distribute prizes')
     }
 
     if (!Array.isArray(winners) || winners.length === 0) {
-      // No winners - keep prize pool
+      // No winners - keep prize pool, mark as completed
       this.status = 'completed'
       return []
     }
 
-    // Import Payment contract dynamically
-    const Payment = (await import('./Payment.js')).default
-
+    // Payment class is in the same module, no need to import
     const payments = []
-    let totalDistributed = 0n
+    let totalDistributed = BigInt(0)
+
+    // Calculate prize per winner
+    const totalPrize = this._satoshis - BigInt(546)  // Keep dust for Quiz contract
+    const prizePerWinner = totalPrize / BigInt(winners.length)
 
     // Create a Payment contract for each winner
+    // These Payment contracts will be funded from Quiz contract's satoshis
     for (const winner of winners) {
       const payment = new Payment(
         winner.student,
-        winner.amount,
+        prizePerWinner,
         `Quiz Prize - ${this.questionHashIPFS}`,
         this._id
       )
       payments.push(payment._rev)
-      totalDistributed += winner.amount
+      totalDistributed += prizePerWinner
     }
 
     // Reduce quiz contract satoshis by distributed amount
     this._satoshis = this._satoshis - totalDistributed
-    this.winners = winners
+    this.winners = winners.map((w, i) => ({
+      ...w,
+      prizeAmount: prizePerWinner.toString(),
+      paymentRev: payments[i]
+    }))
     this.status = 'completed'
 
+    // Return Payment contract revisions
     return payments
   }
+
+  /**
+   * Mark distribution as complete after all Payments are created
+   */
+  markDistributionComplete() {
+    if (this.status !== 'distributing') {
+      throw new Error('Quiz must be in distributing status')
+    }
+    this.status = 'completed'
+  }
+
+
+
 
   /**
    * Mark quiz as completed (legacy method for compatibility)
@@ -249,3 +356,4 @@ class Quiz extends Contract {
 }
 
 export default Quiz
+export { Payment }

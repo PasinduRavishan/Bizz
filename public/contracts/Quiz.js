@@ -53,7 +53,6 @@ class Quiz extends Contract {
     // Note: Deadline validation removed to allow syncing past contracts
 
     // Calculate deadlines (configurable via environment, defaults to 5 minutes for testing)
-    const STUDENT_REVEAL_WINDOW = 5 * 60 * 1000 // 5 minutes in ms (configurable)
     const TEACHER_REVEAL_WINDOW = 5 * 60 * 1000 // 5 minutes in ms (configurable)
 
     // Initialize contract state
@@ -75,8 +74,7 @@ class Quiz extends Contract {
       
       // Timing
       deadline,
-      studentRevealDeadline: deadline + STUDENT_REVEAL_WINDOW,
-      teacherRevealDeadline: deadline + STUDENT_REVEAL_WINDOW + TEACHER_REVEAL_WINDOW,
+      teacherRevealDeadline: deadline + TEACHER_REVEAL_WINDOW,
       
       // State tracking
       status: 'active',                // active | revealed | completed | refunded
@@ -105,7 +103,6 @@ class Quiz extends Contract {
       prizePool: this._satoshis,
       passThreshold: this.passThreshold,
       deadline: this.deadline,
-      studentRevealDeadline: this.studentRevealDeadline,
       teacherRevealDeadline: this.teacherRevealDeadline,
       status: this.status,
       createdAt: this.createdAt,
@@ -132,8 +129,8 @@ class Quiz extends Contract {
     }
 
     // Check timing
-    if (Date.now() < this.studentRevealDeadline) {
-      throw new Error('Must wait for student reveal window to close')
+    if (Date.now() < this.deadline) {
+      throw new Error('Quiz is still active')
     }
     if (Date.now() > this.teacherRevealDeadline) {
       throw new Error('Teacher reveal deadline has passed')

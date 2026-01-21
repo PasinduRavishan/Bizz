@@ -189,7 +189,6 @@ export interface QuizRevealStatusResult {
     title: string | null
     questionCount: number
     deadline: string
-    studentRevealDeadline: string
     teacherRevealDeadline: string
     canReveal: boolean
     isRevealed: boolean

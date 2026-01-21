@@ -85,7 +85,6 @@ model Quiz {
   
   // Timing
   deadline              DateTime
-  studentRevealDeadline DateTime
   teacherRevealDeadline DateTime
   
   // State
@@ -124,11 +123,12 @@ enum QuizStatus {
 // QuizAttempt model - indexes on-chain QuizAttempt contracts
 model QuizAttempt {
   id              String   @id @default(cuid())
-  
+
   // Blockchain data
   contractId      String   @unique  // _id from Bitcoin Computer
   contractRev     String   @unique  // _rev from Bitcoin Computer
   txHash          String?            // Transaction hash
+  moduleSpecifier String?            // Module specifier for contract methods (needed for reveal)
   
   // Attempt data
   studentId       String

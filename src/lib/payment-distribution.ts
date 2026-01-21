@@ -1,15 +1,25 @@
 /**
- * Payment Distribution Service (Contract-Based)
+ * Payment Distribution Service (Decentralized Bitcoin Computer Model)
  *
- * This implements proper Bitcoin Computer payment distribution:
- * - Prize pool is locked in the Quiz contract (teacher paid upfront)
- * - Entry fees are locked in QuizAttempt contracts (students paid on submission)
- * - We create Payment contracts for each winner using computer.encode/broadcast
- * - Recipients claim Payment contracts to release funds to their wallets
+ * This implements proper decentralized Bitcoin Computer payment distribution:
+ * - Teachers create Quiz contracts with prize pool LOCKED in contract satoshis
+ * - Students submit QuizAttempt contracts with entry fees LOCKED in contract satoshis
+ * - Quiz.distributePrizes() creates Payment contracts FROM Quiz's locked satoshis (not teacher wallet)
+ * - QuizAttempt.collectFee() creates Payment contracts FROM attempt's locked satoshis
+ * - Students/teachers claim Payment contracts to receive funds
  *
- * IMPORTANT: We cannot use computer.send() because Bitcoin Computer locks ALL
- * satoshis in smart contracts. The send() method requires spendable UTXOs which
- * don't exist. Instead, we create Payment contracts that hold the prize money.
+ * CRITICAL: Uses computer.encode() + broadcast() pattern for contract method calls.
+ * Direct method calls (contract.method()) don't work with Bitcoin Computer v0.26.0-beta.0
+ * because nested contract creation requires proper _computer context.
+ *
+ * Fund Flow:
+ * 1. Teacher deposits → Quiz contract (185k sats locked)
+ * 2. Students pay entry fees → QuizAttempt contracts (18.5k each locked)
+ * 3. Teacher reveals → Quiz.distributePrizes() → Payment contracts (FROM Quiz's 185k)
+ * 4. System calls collectFee() → Payment contracts (FROM QuizAttempt satoshis)
+ * 5. Recipients claim() → Funds released to their wallets
+ *
+ * Result: Teacher net = entry fees collected - prizes paid (all from contract funds)
  */
 
 import { prisma } from './prisma'
@@ -33,15 +43,38 @@ async function withMempoolRetry<T>(
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error))
       const isMempoolConflict = lastError.message.includes('txn-mempool-conflict')
+      const isTooLongChain = lastError.message.includes('too-long-mempool-chain')
 
-      if (!isMempoolConflict || attempt === maxRetries) {
-        throw lastError
+      // Special handling for too-long-mempool-chain - needs much longer waits
+      if (isTooLongChain) {
+        if (attempt === maxRetries) {
+          console.error(`\n⚠️  MEMPOOL ANCESTOR LIMIT REACHED`)
+          console.error(`Bitcoin allows maximum 25 unconfirmed transactions in a chain.`)
+          console.error(`You have too many pending transactions. Wait 10-20 minutes.`)
+          throw new Error(`Mempool ancestor limit exceeded. Please wait for pending transactions to confirm before attempting more operations.`)
+        }
+        
+        // Much longer delays for ancestor chain issues (15s, 30s, 60s, 120s, 240s)
+        const delayMs = 15000 * Math.pow(2, attempt - 1)
+        console.log(`  ⏳ ${operationName}: TOO MANY UNCONFIRMED ANCESTORS, waiting ${delayMs/1000}s for confirmations... (${attempt}/${maxRetries})`)
+        await new Promise(resolve => setTimeout(resolve, delayMs))
+        continue
       }
 
-      // Exponential backoff: 3s, 6s, 12s, 24s, 48s
-      const delayMs = initialDelayMs * Math.pow(2, attempt - 1)
-      console.log(`  ⏳ ${operationName}: mempool conflict, waiting ${delayMs/1000}s before retry ${attempt + 1}/${maxRetries}...`)
-      await new Promise(resolve => setTimeout(resolve, delayMs))
+      if (isMempoolConflict) {
+        if (attempt === maxRetries) {
+          throw lastError
+        }
+        
+        // Standard exponential backoff for regular mempool conflicts
+        const delayMs = initialDelayMs * Math.pow(2, attempt - 1)
+        console.log(`  ⏳ ${operationName}: mempool conflict, waiting ${delayMs/1000}s before retry ${attempt + 1}/${maxRetries}...`)
+        await new Promise(resolve => setTimeout(resolve, delayMs))
+        continue
+      }
+
+      // Not a mempool issue - throw immediately
+      throw lastError
     }
   }
 
@@ -49,68 +82,52 @@ async function withMempoolRetry<T>(
 }
 
 /**
- * Payment contract source code for deployment
- *
- * NOTE: Bitcoin Computer's deploy() method expects a STRING containing JavaScript source code,
- * not an imported class. The contract is inscribed in a Bitcoin transaction and the
- * transaction id becomes the module specifier.
- *
- * This is defined inline (like Quiz and QuizAttempt contracts in their API routes)
- * rather than imported from /contracts/Payment.js
+ * Poll for quiz contract to reach 'revealed' status
+ * Blockchain confirmation takes time - poll until status updates
  */
-// Payment contract source code - pure JavaScript, no imports
-// Contract class is available globally in Bitcoin Computer runtime
-const PaymentContractSource = `
-  export class Payment extends Contract {
-    constructor(recipient, amount, purpose, reference) {
-      if (!recipient) throw new Error('Recipient required')
-      if (amount < 546n) throw new Error('Amount must be at least 546 satoshis (dust limit)')
-      if (!purpose) throw new Error('Purpose required')
-
-      super({
-        _owners: [recipient],
-        _satoshis: amount,
-        recipient,
-        amount,
-        purpose,
-        reference,
-        status: 'unclaimed',
-        createdAt: Date.now(),
-        claimedAt: null
-      })
+async function pollForRevealedStatus(
+  computer: any,
+  quizRev: string,
+  maxAttempts: number = 10,
+  delayMs: number = 3000
+): Promise<any> {
+  console.log(`  ⏳ Polling for quiz status to be 'revealed'...`)
+  
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const contract = await computer.sync(quizRev)
+    
+    console.log(`  Attempt ${attempt}/${maxAttempts}: Status = ${contract.status}`)
+    
+    if (contract.status === 'revealed') {
+      console.log(`  ✅ Quiz is now revealed!`)
+      return contract
     }
-
-    claim() {
-      if (this.status === 'claimed') {
-        throw new Error('Payment already claimed')
-      }
-      this._satoshis = 546n
-      this.status = 'claimed'
-      this.claimedAt = Date.now()
-      return this
-    }
-
-    getInfo() {
-      return {
-        paymentId: this._id,
-        recipient: this.recipient,
-        amount: this.amount,
-        purpose: this.purpose,
-        reference: this.reference,
-        status: this.status,
-        createdAt: this.createdAt,
-        claimedAt: this.claimedAt,
-        canClaim: this.status === 'unclaimed'
-      }
+    
+    if (attempt < maxAttempts) {
+      console.log(`  ⏳ Waiting ${delayMs/1000}s before retry...`)
+      await new Promise(resolve => setTimeout(resolve, delayMs))
     }
   }
-`
+  
+  throw new Error(`Quiz status did not update to 'revealed' after ${maxAttempts} attempts (${maxAttempts * delayMs / 1000}s). Blockchain confirmation may be delayed.`)
+}
+
+/**
+ * NOTE: Payment contracts are now created inside Quiz.distributePrizes() method.
+ * The Quiz contract creates Payment contracts using its own locked satoshis,
+ * ensuring funds flow correctly from Quiz → Payment → Student wallets.
+ *
+ * The PaymentContractSource definition is no longer needed here.
+ */
 
 /**
  * Distribute prizes to winners by creating Payment contracts
  * Each Payment contract holds the prize amount for a winner to claim
+ * 
+ * @param quizId - Quiz database ID
+ * @param revealedQuizRev - UPDATED quiz contract revision after revealAnswers (with status 'revealed')
  */
-export async function distributePrizesToWinners(quizId: string) {
+export async function distributePrizesToWinners(quizId: string, revealedQuizRev?: string) {
   console.log(`\n🏆 Distributing prizes for quiz ${quizId}`)
 
   const quiz = await prisma.quiz.findUnique({
@@ -143,87 +160,127 @@ export async function distributePrizesToWinners(quizId: string) {
 
   console.log(`  Found ${quiz.winners.length} winners to pay`)
   console.log(`  Prize pool: ${quiz.prizePool} sats`)
-  console.log(`  Quiz contract rev: ${quiz.contractRev}`)
-
-  // Get teacher's wallet to create Payment contracts
-  const teacherComputer = await getUserWallet(quiz.teacherId)
-
-  // Deploy Payment contract module (only once)
-  // NOTE: deploy() expects a STRING of JavaScript source code, not an imported class
-  // Uses retry logic to handle mempool conflicts from previous transactions
-  console.log(`\n  📦 Deploying Payment contract module...`)
-  const paymentModuleSpecifier = await withMempoolRetry(
-    () => teacherComputer.deploy(PaymentContractSource),
-    'Deploy Payment module',
-    5,  // max 5 retries
-    5000 // start with 5 second delay (previous reveal tx needs time to confirm)
-  )
-  console.log(`  ✅ Payment module deployed: ${paymentModuleSpecifier}`)
-
-  let totalDistributed = BigInt(0)
-  const paymentResults = []
-
-  // First, sync the quiz contract and update it to mark as distributing
-  console.log(`\n  📝 Syncing Quiz contract...`)
-  const quizContract = await teacherComputer.sync(quiz.contractRev)
-
-  if (!quizContract) {
-    throw new Error('Failed to sync Quiz contract from blockchain')
+  
+  // Use the REVEALED quiz revision (passed from reveal route) or fall back to DB
+  const quizRevToUse = revealedQuizRev || quiz.contractRev
+  console.log(`  Quiz contract rev: ${quizRevToUse}`)
+  if (revealedQuizRev) {
+    console.log(`  ✅ Using REVEALED revision (status: 'revealed')`)
+  } else {
+    console.log(`  ⚠️  Using DB revision (may be outdated)`)
   }
 
-  console.log(`  Contract status: ${quizContract.status}`)
-  console.log(`  Contract satoshis: ${quizContract._satoshis}`)
+  // Get teacher's Computer instance to call Quiz contract
+  const teacherComputer = await getUserWallet(quiz.teacherId)
 
-  // Process each winner - create a Payment contract for them
+  console.log(`\n  📝 Syncing Quiz contract and waiting for 'revealed' status...`)
+  console.log(`  This may take 10-30 seconds for blockchain confirmation`)
+  
+  // Poll for revealed status - blockchain confirmation takes time
+  let quizContract
+  try {
+    quizContract = await pollForRevealedStatus(teacherComputer, quizRevToUse, 10, 3000)
+  } catch (pollError) {
+    console.error(`  ❌ Failed to get revealed status:`, pollError)
+    throw new Error(`Quiz contract not in revealed status after waiting. ${pollError instanceof Error ? pollError.message : 'Unknown error'}`)
+  }
+
+  console.log(`  ✅ Quiz synced - Status: ${quizContract.status}, Satoshis: ${quizContract._satoshis}`)
+
+  // Prepare winner data for distributePrizes
+  const winnersData = quiz.winners.map(w => ({
+    student: w.attempt.student.publicKey,
+    attemptId: w.attemptId
+  }))
+
+  console.log(`\n  💰 Calling Quiz.distributePrizes() via encode/broadcast pattern...`)
+  console.log(`  This will:`)
+  console.log(`    1. Create Payment contracts for ${winnersData.length} winners`)
+  console.log(`    2. Use ${quizContract._satoshis - BigInt(546)} sats FROM Quiz contract`)
+  console.log(`    3. Reduce Quiz satoshis to dust (546 sats)`)
+  console.log(`    4. Teacher's wallet NOT touched (funds come from Quiz contract)`)
+
+  let paymentRevs: string[]
+  let distributeTxId: string
+  
+  try {
+    // Use encode/broadcast pattern - the ONLY way that works with Bitcoin Computer
+    // This calls distributePrizes on the Quiz contract, which creates Payment contracts
+    // using the Quiz contract's locked satoshis
+    const { tx, effect } = await withMempoolRetry(
+      async () => {
+        return await teacherComputer.encode({
+          exp: `${quizRevToUse}.distributePrizes(${JSON.stringify(winnersData)})`,
+          env: { [quizRevToUse]: quizContract }
+        })
+      },
+      'Encode distributePrizes transaction',
+      3,
+      3000
+    )
+
+    console.log(`  ✅ Transaction encoded successfully`)
+
+    // Broadcast the transaction
+    distributeTxId = await withMempoolRetry(
+      async () => {
+        return await teacherComputer.broadcast(tx)
+      },
+      'Broadcast distributePrizes transaction',
+      3,
+      3000
+    )
+
+    console.log(`  ✅ Transaction broadcasted: ${distributeTxId}`)
+    console.log(`  ⏳ Waiting 5 seconds for blockchain confirmation...`)
+    await new Promise(resolve => setTimeout(resolve, 5000))
+
+    // Extract payment revisions from effect
+    paymentRevs = effect.res as string[]
+    
+    if (!Array.isArray(paymentRevs) || paymentRevs.length !== winnersData.length) {
+      throw new Error(`Expected ${winnersData.length} payment revisions, got ${paymentRevs?.length || 0}`)
+    }
+
+    console.log(`  ✅ distributePrizes SUCCESS!`)
+    console.log(`  Created ${paymentRevs.length} Payment contracts from Quiz's locked funds`)
+
+    // Re-sync to verify satoshis were reduced
+    const updatedQuiz = await teacherComputer.sync(quizRevToUse)
+    console.log(`  Quiz satoshis: ${quizContract._satoshis} → ${updatedQuiz._satoshis}`)
+    console.log(`  Quiz status: ${quizContract.status} → ${updatedQuiz.status}`)
+    
+    if (updatedQuiz._satoshis > BigInt(546)) {
+      console.log(`  ⚠️  WARNING: Quiz still has ${updatedQuiz._satoshis} sats (expected 546)`)
+    }
+  } catch (error) {
+    console.error(`  ❌ distributePrizes FAILED:`, error)
+    throw new Error(`Failed to distribute prizes from Quiz contract: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+
+  // Update database with Payment contract revisions
+  const paymentResults = []
+  let totalDistributed = BigInt(0)
+
   for (let i = 0; i < quiz.winners.length; i++) {
     const winner = quiz.winners[i]
+    const paymentRev = paymentRevs[i]
 
     try {
-      console.log(`\n  🏆 Creating payment for winner ${i + 1}:`)
+      console.log(`\n  💾 Updating DB for winner ${i + 1}:`)
       console.log(`    Student: ${winner.attempt.student.name}`)
-      console.log(`    Public Key: ${winner.attempt.student.publicKey}`)
-      console.log(`    Score: ${winner.score}%`)
-      console.log(`    Prize: ${winner.prizeAmount} sats`)
+      console.log(`    Payment Rev: ${paymentRev}`)
 
-      const studentPublicKey = winner.attempt.student.publicKey
-      if (!studentPublicKey) {
-        throw new Error('Student has no public key')
-      }
-
-      console.log(`    Creating Payment contract...`)
-
-      // Wrap encode+broadcast with retry logic for mempool conflicts
-      const { txId, paymentContract } = await withMempoolRetry(
-        async () => {
-          const { tx, effect } = await teacherComputer.encode({
-            mod: paymentModuleSpecifier,
-            exp: `new Payment("${studentPublicKey}", BigInt(${winner.prizeAmount}), "Quiz Prize - ${quiz.title || quiz.id}", "${quizId}")`
-          })
-
-          const broadcastTxId = await teacherComputer.broadcast(tx)
-          const contract = effect.res as { _id: string; _rev: string }
-
-          return { txId: broadcastTxId, paymentContract: contract }
-        },
-        `Create Payment for ${winner.attempt.student.name}`,
-        3,  // 3 retries for each payment
-        2000 // 2 second initial delay
-      )
-
-      console.log(`    Transaction ID: ${txId}`)
-      console.log(`    Payment contract ID: ${paymentContract._id}`)
-      console.log(`    Payment contract rev: ${paymentContract._rev}`)
-
-      // Mark winner as paid with Payment contract revision
+      // Mark winner as paid
       await prisma.winner.update({
         where: { id: winner.id },
         data: {
           paid: true,
-          paidTxHash: paymentContract._rev // Store Payment contract revision for claiming
+          paidTxHash: paymentRev
         }
       })
 
-      // Update student's total earnings
+      // Update student earnings
       await prisma.user.update({
         where: { id: winner.attempt.studentId },
         data: {
@@ -231,7 +288,7 @@ export async function distributePrizesToWinners(quizId: string) {
         }
       })
 
-      // Update attempt with prize amount
+      // Update attempt with prize
       await prisma.quizAttempt.update({
         where: { id: winner.attemptId },
         data: {
@@ -245,21 +302,18 @@ export async function distributePrizesToWinners(quizId: string) {
         winnerId: winner.id,
         studentId: winner.attempt.studentId,
         studentAddress: winner.attempt.student.address,
-        studentPublicKey: studentPublicKey,
+        studentPublicKey: winner.attempt.student.publicKey,
         amount: winner.prizeAmount.toString(),
-        paymentRev: paymentContract._rev,
-        txId: txId,
+        paymentRev: paymentRev,
+        txId: paymentRev.split(':')[0],
         status: 'success' as const,
         canClaim: true
       })
 
-      console.log(`    ✅ Payment contract created successfully!`)
-
-      // Small delay between transactions to avoid nonce issues
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      console.log(`    ✅ DB updated`)
 
     } catch (error) {
-      console.error(`  ❌ Failed to create payment for winner ${winner.id}:`, error)
+      console.error(`  ❌ DB update failed for winner ${winner.id}:`, error)
 
       paymentResults.push({
         winnerId: winner.id,
@@ -267,55 +321,20 @@ export async function distributePrizesToWinners(quizId: string) {
         studentAddress: winner.attempt.student.address || 'N/A',
         studentPublicKey: winner.attempt.student.publicKey || 'N/A',
         amount: winner.prizeAmount.toString(),
-        paymentRev: 'FAILED',
-        txId: 'FAILED',
+        paymentRev: paymentRev || 'DB_FAILED',
+        txId: 'DB_FAILED',
         status: 'failed' as const,
         canClaim: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'DB update failed'
       })
-    }
-  }
-
-  // Mark quiz contract as completed via the complete() method
-  if (paymentResults.some(p => p.status === 'success')) {
-    try {
-      console.log(`\n  📝 Marking quiz contract as completed...`)
-
-      // Re-sync to get latest state
-      const latestQuizContract = await teacherComputer.sync(quiz.contractRev)
-
-      if (latestQuizContract.status === 'revealed') {
-        // Call complete() method to mark as completed
-        latestQuizContract.complete(quiz.winners.map(w => ({
-          student: w.attempt.student.publicKey,
-          amount: w.prizeAmount.toString()
-        })))
-
-        // Wait for blockchain confirmation
-        await new Promise(resolve => setTimeout(resolve, 2000))
-
-        // Get updated contract revision
-        const updatedContract = await teacherComputer.sync(quiz.contractRev)
-
-        await prisma.quiz.update({
-          where: { id: quizId },
-          data: {
-            contractRev: updatedContract._rev
-          }
-        })
-
-        console.log(`  ✅ Quiz contract marked as completed`)
-      }
-    } catch (error) {
-      console.error(`  ⚠️ Failed to update quiz contract status:`, error)
-      // Non-fatal - payments were still created
     }
   }
 
   console.log(`\n📊 Prize Distribution Summary:`)
   console.log(`  ✅ Winners paid: ${paymentResults.filter(p => p.status === 'success').length}`)
   console.log(`  ❌ Failed: ${paymentResults.filter(p => p.status === 'failed').length}`)
-  console.log(`  💰 Total distributed: ${totalDistributed} sats`)
+  console.log(`  💰 Total distributed from Quiz contract's locked funds: ${totalDistributed} sats`)
+  console.log(`  📝 Payment contracts created and claimable by students`)
 
   return {
     distributed: paymentResults.filter(p => p.status === 'success').length,
@@ -398,15 +417,18 @@ export async function payEntryFeesToTeacher(quizId: string) {
  * Complete payment flow
  * 1. Create Payment contracts for winners (actual blockchain contracts)
  * 2. Calculate entry fee distribution (for accounting)
+ * 
+ * @param quizId - Quiz database ID
+ * @param revealedQuizRev - UPDATED quiz contract revision after revealAnswers (status 'revealed')
  */
-export async function processCompletePayments(quizId: string) {
+export async function processCompletePayments(quizId: string, revealedQuizRev?: string) {
   console.log(`\n💳 Processing complete payments for ${quizId}`)
   console.log(`${'='.repeat(60)}`)
 
   try {
     // 1. Create Payment contracts for winners
     console.log(`\n📤 Step 1: Creating Payment contracts for winners...`)
-    const prizeResults = await distributePrizesToWinners(quizId)
+    const prizeResults = await distributePrizesToWinners(quizId, revealedQuizRev)
 
     // 2. Calculate entry fee distribution (for display)
     console.log(`\n📥 Step 2: Calculating entry fee distribution...`)
@@ -516,12 +538,24 @@ export async function claimPayment(userId: string, paymentRev: string) {
       }
     }
 
-    // Claim the payment (reduces satoshis to dust, releases funds to owner's wallet)
-    console.log(`  🎯 Calling Payment.claim()...`)
-    paymentContract.claim()
+    // Claim the payment using encode/broadcast pattern
+    console.log(`  🎯 Calling Payment.claim() via encode/broadcast...`)
+
+    await withMempoolRetry(
+      async () => {
+        const { tx } = await computer.encode({
+          exp: `${paymentRev}.claim()`,
+          env: { [paymentRev]: paymentContract }
+        })
+        await computer.broadcast(tx)
+      },
+      'Claim payment',
+      3,
+      2000
+    )
 
     // Wait for blockchain confirmation
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    await new Promise(resolve => setTimeout(resolve, 3000))
 
     // Refresh user balance from blockchain
     const newBalance = await getUserBalance(userId)

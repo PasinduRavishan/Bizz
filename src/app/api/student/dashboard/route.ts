@@ -30,7 +30,7 @@ export async function GET() {
             passThreshold: true,
             status: true,
             deadline: true,
-            studentRevealDeadline: true,
+
             teacherRevealDeadline: true
           }
         }
