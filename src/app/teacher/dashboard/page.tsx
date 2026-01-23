@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/Badge'
 import { WalletBalance } from '@/components/wallet/WalletBalance'
 import { PaymentStatus } from '@/components/quiz/PaymentStatus'
 import { QuizFinancialDetails } from '@/components/quiz/QuizFinancialDetails'
+import { CountdownTimer } from '@/components/ui/CountdownTimer'
 
 interface Quiz {
   id: string
@@ -22,6 +23,7 @@ interface Quiz {
   status: string
   deadline: string
   teacherRevealDeadline: string
+  distributionDeadline?: string
   createdAt: string
   _count: {
     attempts: number
@@ -34,8 +36,12 @@ interface DashboardData {
   stats: {
     totalQuizzes: number
     activeQuizzes: number
+    revealedQuizzes: number
+    completedQuizzes: number
+    abandonedQuizzes: number
     totalAttempts: number
     totalRevenue: string
+    refundedAttempts: number
   }
 }
 
@@ -46,6 +52,7 @@ export default function TeacherDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [selectedQuizForPayment, setSelectedQuizForPayment] = useState<string | null>(null)
   const [selectedQuizForDetails, setSelectedQuizForDetails] = useState<string | null>(null)
+  const [filter, setFilter] = useState<string>('all')
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -93,11 +100,33 @@ export default function TeacherDashboard() {
       ACTIVE: 'success',
       REVEALED: 'info',
       COMPLETED: 'default',
-      REFUNDED: 'danger'
+      REFUNDED: 'abandoned',
+      ABANDONED: 'abandoned'
     } as const
 
-    return <Badge variant={variants[status as keyof typeof variants] || 'default'}>{status}</Badge>
+    const icons = {
+      ACTIVE: '🟢',
+      REVEALED: '🔓',
+      COMPLETED: '✅',
+      REFUNDED: '⚠️',
+      ABANDONED: '⚠️'
+    }
+
+    return (
+      <Badge variant={variants[status as keyof typeof variants] || 'default'}>
+        {icons[status as keyof typeof icons]} {status}
+      </Badge>
+    )
   }
+
+  const filteredQuizzes = data?.quizzes.filter(quiz => {
+    if (filter === 'all') return true
+    if (filter === 'active') return quiz.status === 'ACTIVE'
+    if (filter === 'revealed') return quiz.status === 'REVEALED'
+    if (filter === 'completed') return quiz.status === 'COMPLETED'
+    if (filter === 'abandoned') return quiz.status === 'REFUNDED' || quiz.status === 'ABANDONED'
+    return true
+  }) || []
 
   const canReveal = (quiz: Quiz) => {
     const now = new Date()
@@ -150,7 +179,7 @@ export default function TeacherDashboard() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid md:grid-cols-4 gap-4 mb-8">
+      <div className="grid md:grid-cols-5 gap-4 mb-6">
         <Card>
           <CardBody>
             <div className="text-sm text-gray-600 dark:text-gray-400">Total Quizzes</div>
@@ -161,9 +190,17 @@ export default function TeacherDashboard() {
         </Card>
         <Card>
           <CardBody>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Active Quizzes</div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Active</div>
             <div className="text-2xl font-bold text-green-600">
               {loading ? '...' : data?.stats.activeQuizzes || 0}
+            </div>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Completed</div>
+            <div className="text-2xl font-bold text-blue-600">
+              {loading ? '...' : data?.stats.completedQuizzes || 0}
             </div>
           </CardBody>
         </Card>
@@ -177,13 +214,54 @@ export default function TeacherDashboard() {
         </Card>
         <Card>
           <CardBody>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Total Revenue</div>
-            <div className="text-2xl font-bold text-blue-600">
-              {loading ? '...' : `${data?.stats.totalRevenue || '0.00000000'} BTC`}
+            <div className="text-sm text-gray-600 dark:text-gray-400">Refunded</div>
+            <div className="text-2xl font-bold text-purple-600">
+              {loading ? '...' : data?.stats.refundedAttempts || 0}
             </div>
           </CardBody>
         </Card>
       </div>
+
+      {/* Filter Buttons */}
+      {!loading && !error && data && data.quizzes.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-6">
+          <Button
+            variant={filter === 'all' ? 'primary' : 'outline'}
+            size="sm"
+            onClick={() => setFilter('all')}
+          >
+            All ({data.stats.totalQuizzes})
+          </Button>
+          <Button
+            variant={filter === 'active' ? 'primary' : 'outline'}
+            size="sm"
+            onClick={() => setFilter('active')}
+          >
+            Active ({data.stats.activeQuizzes})
+          </Button>
+          <Button
+            variant={filter === 'revealed' ? 'primary' : 'outline'}
+            size="sm"
+            onClick={() => setFilter('revealed')}
+          >
+            Revealed ({data.stats.revealedQuizzes})
+          </Button>
+          <Button
+            variant={filter === 'completed' ? 'primary' : 'outline'}
+            size="sm"
+            onClick={() => setFilter('completed')}
+          >
+            Completed ({data.stats.completedQuizzes})
+          </Button>
+          <Button
+            variant={filter === 'abandoned' ? 'primary' : 'outline'}
+            size="sm"
+            onClick={() => setFilter('abandoned')}
+          >
+            Abandoned ({data.stats.abandonedQuizzes})
+          </Button>
+        </div>
+      )}
 
       {/* Loading State */}
       {loading && (
@@ -209,7 +287,7 @@ export default function TeacherDashboard() {
       {/* Quizzes List */}
       {!loading && !error && data && (
         <div className="space-y-4">
-          {data.quizzes.length === 0 ? (
+          {filteredQuizzes.length === 0 ? (
             <Card>
               <CardBody className="text-center py-12">
                 <div className="text-6xl mb-4">📝</div>
@@ -225,7 +303,7 @@ export default function TeacherDashboard() {
               </CardBody>
             </Card>
           ) : (
-            data.quizzes.map((quiz) => (
+            filteredQuizzes.map((quiz) => (
               <Card key={quiz.id} hover>
                 <CardBody>
                   <div className="flex items-start justify-between gap-4">
@@ -283,6 +361,43 @@ export default function TeacherDashboard() {
                           </>
                         )}
                       </div>
+
+                      {/* Deadline countdown for ACTIVE quizzes */}
+                      {quiz.status === 'ACTIVE' && new Date() < new Date(quiz.deadline) && (
+                        <div className="mt-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800 text-sm">
+                          <span className="text-blue-900 dark:text-blue-100">Submission closes in: </span>
+                          <CountdownTimer deadline={quiz.deadline} className="font-medium" />
+                        </div>
+                      )}
+
+                      {/* Distribution deadline warning for REVEALED quizzes */}
+                      {quiz.status === 'REVEALED' && quiz.distributionDeadline && (
+                        <div className="mt-3 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                          <div className="flex items-start gap-2">
+                            <span className="text-orange-600 text-xl">⚠️</span>
+                            <div className="flex-1 text-sm">
+                              <div className="font-medium text-orange-900 dark:text-orange-100">
+                                Distribution Deadline Approaching
+                              </div>
+                              <div className="text-orange-700 dark:text-orange-300 mt-1">
+                                Distribute prizes within <CountdownTimer deadline={quiz.distributionDeadline} className="font-bold" /> or quiz will be abandoned and students can claim refunds.
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Abandoned quiz status */}
+                      {(quiz.status === 'REFUNDED' || quiz.status === 'ABANDONED') && (
+                        <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                          <div className="flex items-center gap-2 text-sm">
+                            <Badge variant="abandoned">⚠️ ABANDONED</Badge>
+                            <span className="text-gray-600 dark:text-gray-400">
+                              Students can claim refunds
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex flex-col gap-2">

@@ -196,24 +196,41 @@ export async function POST(
     console.log('  Current status:', quizContract.status)
     console.log('  Current rev:', quizContract._rev)
 
-    // Call revealAnswers method - it's synchronous, modifies contract state
+    // Call revealAnswers method using encodeCall pattern
     console.log('🔓 Calling revealAnswers method on contract...')
+
+    if (!quiz.moduleSpecifier) {
+      return NextResponse.json(
+        { success: false, error: 'Quiz module specifier not found. Cannot call reveal method.' },
+        { status: 500 }
+      )
+    }
 
     let updatedRev: string
     let txId: string
 
     try {
-      // revealAnswers is NOT async - call it synchronously
-      quizContract.revealAnswers(answers, salt)
+      // Use encodeCall pattern to properly persist blockchain changes
+      const { tx, effect } = await computer.encodeCall({
+        target: quizContract,
+        property: 'revealAnswers',
+        args: [answers, salt],
+        mod: quiz.moduleSpecifier
+      })
 
-      console.log('✅ RevealAnswers method called')
-      console.log('  Waiting 3 seconds for transaction to process...')
+      // Broadcast the transaction to blockchain
+      await computer.broadcast(tx)
 
-      // Wait for mutation to complete
+      console.log('✅ RevealAnswers transaction broadcasted')
+      console.log('  Waiting 3 seconds for blockchain confirmation...')
+
+      // Wait for blockchain confirmation
       await new Promise(resolve => setTimeout(resolve, 3000))
 
-      // Sync again to get updated state with new _rev
-      const updatedContract = await computer.sync(quiz.contractRev)
+      // Query for latest revision and sync
+      const [latestRev] = await computer.query({ ids: [quiz.contractId] })
+      const updatedContract = await computer.sync(latestRev)
+
       console.log('✅ Contract synced after reveal')
       console.log('  New status:', updatedContract.status)
       console.log('  Revealed answers stored:', updatedContract.revealedAnswers ? 'yes' : 'no')
@@ -224,12 +241,11 @@ export async function POST(
       console.log('✅ Contract updated!')
       console.log('  New rev:', updatedRev)
       console.log('  Transaction ID:', txId)
+      console.log('  New status:', updatedContract.status)
     } catch (revealError) {
       console.error('❌ RevealAnswers method failed:', revealError)
       throw new Error(`Failed to call revealAnswers on contract: ${revealError instanceof Error ? revealError.message : 'Unknown error'}`)
     }
-    console.log('  New status:', quizContract.status)
-    console.log('  Revealed answers stored:', quizContract.revealedAnswers ? 'yes' : 'no')
 
     // Update database
     await prisma.quiz.update({

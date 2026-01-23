@@ -66,7 +66,7 @@ export async function distributePrizes(quizId: string) {
     totalAmount: BigInt(0),
     payments: [] as Array<{
       winnerId: string
-      studentId: string
+      userId: string
       amount: string
       status: string
     }>
@@ -91,7 +91,7 @@ export async function distributePrizes(quizId: string) {
 
       // Update student's total earnings (accounting)
       await prisma.user.update({
-        where: { id: winner.attempt.studentId },
+        where: { id: winner.attempt.userId },
         data: {
           totalEarnings: {
             increment: winner.prizeAmount
@@ -103,7 +103,7 @@ export async function distributePrizes(quizId: string) {
       results.totalAmount += winner.prizeAmount
       results.payments.push({
         winnerId: winner.id,
-        studentId: winner.attempt.studentId,
+        userId: winner.attempt.userId,
         amount: winner.prizeAmount.toString(),
         status: 'awarded'
       })
@@ -115,7 +115,7 @@ export async function distributePrizes(quizId: string) {
       results.failed++
       results.payments.push({
         winnerId: winner.id,
-        studentId: winner.attempt.studentId,
+        userId: winner.attempt.userId,
         amount: winner.prizeAmount.toString(),
         status: 'failed'
       })
@@ -203,7 +203,7 @@ export async function refreshQuizBalances(quizId: string) {
     where: { id: quizId },
     include: {
       attempts: {
-        select: { studentId: true }
+        select: { userId: true }
       }
     }
   })
@@ -214,7 +214,7 @@ export async function refreshQuizBalances(quizId: string) {
 
   const userIds = new Set<string>([
     quiz.teacherId,
-    ...quiz.attempts.map(a => a.studentId)
+    ...quiz.attempts.map(a => a.userId)
   ])
 
   console.log(`  Updating ${userIds.size} user balances...`)

@@ -128,7 +128,7 @@ export async function GET(
       // Winners detail
       winners: quiz.winners.map(w => ({
         id: w.id,
-        studentId: w.attempt.studentId,
+        userId: w.attempt.userId,
         studentName: w.attempt.student.name,
         score: w.score,
         prizeAmount: w.prizeAmount.toString(),

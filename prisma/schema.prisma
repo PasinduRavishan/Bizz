@@ -66,6 +66,7 @@ model Quiz {
   contractId        String   @unique  // _id from Bitcoin Computer
   contractRev       String   @unique  // _rev from Bitcoin Computer
   txHash            String?            // Transaction hash
+  moduleSpecifier   String?            // Module specifier for contract calls
   
   // Quiz data
   teacherId         String
@@ -85,8 +86,10 @@ model Quiz {
   
   // Timing
   deadline              DateTime
+  studentRevealDeadline DateTime?
   teacherRevealDeadline DateTime
-  
+  distributionDeadline  DateTime?
+
   // State
   status            QuizStatus @default(ACTIVE)
   revealedAnswers   String[]           // Actual answers after reveal
@@ -118,6 +121,7 @@ enum QuizStatus {
   REVEALED
   COMPLETED
   REFUNDED
+  ABANDONED
 }
 
 // QuizAttempt model - indexes on-chain QuizAttempt contracts
@@ -131,9 +135,9 @@ model QuizAttempt {
   moduleSpecifier String?            // Module specifier for contract methods (needed for reveal)
   
   // Attempt data
-  studentId       String
-  student         User     @relation(fields: [studentId], references: [id])
-  
+  userId          String
+  student         User     @relation(fields: [userId], references: [id])
+
   quizId          String
   quiz            Quiz     @relation(fields: [quizId], references: [id])
   
@@ -163,7 +167,7 @@ model QuizAttempt {
   // Relations
   winner           Winner?
   
-  @@index([studentId])
+  @@index([userId])
   @@index([quizId])
   @@index([status])
   @@index([contractId])
@@ -174,6 +178,7 @@ enum AttemptStatus {
   REVEALED
   VERIFIED
   FAILED
+  REFUNDED
 }
 
 // Winner model - tracks quiz winners

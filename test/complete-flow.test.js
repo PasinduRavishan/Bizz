@@ -309,13 +309,14 @@ const _QuizContractSource_LEGACY = `
 
 const _QuizAttemptSource_LEGACY = `
   export class QuizAttempt extends Contract {
-    constructor(student, quizRef, answerCommitment, entryFee) {
+    constructor(student, quizRef, answerCommitment, entryFee, quizTeacher) {
       if (!student) throw new Error('Student public key required')
       if (!quizRef) throw new Error('Quiz reference required')
       if (!answerCommitment) throw new Error('Answer commitment required')
       if (entryFee < 5000n) {
         throw new Error('Entry fee must be at least 5,000 satoshis')
       }
+      if (!quizTeacher) throw new Error('Quiz teacher public key required')
 
       super({
         _owners: [student],
@@ -323,6 +324,7 @@ const _QuizAttemptSource_LEGACY = `
         student: student,
         quizRef: quizRef,
         answerCommitment: answerCommitment,
+        quizTeacher: quizTeacher, // Store teacher public key for later collection
         revealedAnswers: null,
         nonce: null,
         score: null,
@@ -400,6 +402,33 @@ const _QuizAttemptSource_LEGACY = `
       this._satoshis = 546n
       this.status = 'refunded'
       this.refundedAt = Date.now()
+    }
+
+    // ✅ NEW: Step 1 - Student transfers ownership to teacher
+    // MUST be called by STUDENT (current owner) to authorize the ownership transfer
+    transferOwnershipToTeacher(quiz) {
+      if (quiz.status !== 'completed') {
+        throw new Error('Cannot transfer ownership: quiz not completed')
+      }
+      if (this.status === 'ownership-transferred' || this.status === 'forfeited') {
+        throw new Error('Ownership already transferred')
+      }
+
+      // Transfer ownership to teacher (creates new UTXO with teacher as owner)
+      this._owners = [this.quizTeacher]
+      this.status = 'ownership-transferred'
+    }
+
+    // ✅ NEW: Step 2 - Teacher claims the entry fee
+    // MUST be called by TEACHER (new owner) after ownership transfer
+    claimEntryFee() {
+      if (this.status !== 'ownership-transferred') {
+        throw new Error('Ownership must be transferred first')
+      }
+
+      // Reduce to dust - funds go to caller (teacher)
+      this._satoshis = 546n
+      this.status = 'forfeited'
     }
 
     getInfo() {
@@ -704,7 +733,7 @@ describe('🎓 BITCOIN COMPUTER QUIZ PLATFORM - COMPLETE FLOW TESTS', function()
       const { tx, effect } = await withRetry(
         () => student1Computer.encode({
           mod: attemptModuleSpec,
-          exp: `new QuizAttempt("${student1Computer.getPublicKey()}", "${quizContract._rev}", "${commitment1}", BigInt(${entryFee}))`
+          exp: `new QuizAttempt("${student1Computer.getPublicKey()}", "${quizContract._rev}", "${commitment1}", BigInt(${entryFee}), "${teacherComputer.getPublicKey()}")`
         }),
         'Encode Student 1 attempt'
       )
@@ -750,7 +779,7 @@ describe('🎓 BITCOIN COMPUTER QUIZ PLATFORM - COMPLETE FLOW TESTS', function()
       const { tx, effect } = await withRetry(
         () => student2Computer.encode({
           mod: attemptModuleSpec,
-          exp: `new QuizAttempt("${student2Computer.getPublicKey()}", "${quizContract._rev}", "${commitment2}", BigInt(${entryFee}))`
+          exp: `new QuizAttempt("${student2Computer.getPublicKey()}", "${quizContract._rev}", "${commitment2}", BigInt(${entryFee}), "${teacherComputer.getPublicKey()}")`
         }),
         'Encode Student 2 attempt'
       )
@@ -793,7 +822,7 @@ describe('🎓 BITCOIN COMPUTER QUIZ PLATFORM - COMPLETE FLOW TESTS', function()
       const { tx, effect } = await withRetry(
         () => student3Computer.encode({
           mod: attemptModuleSpec,
-          exp: `new QuizAttempt("${student3Computer.getPublicKey()}", "${quizContract._rev}", "${commitment3}", BigInt(${entryFee}))`
+          exp: `new QuizAttempt("${student3Computer.getPublicKey()}", "${quizContract._rev}", "${commitment3}", BigInt(${entryFee}), "${teacherComputer.getPublicKey()}")`
         }),
         'Encode Student 3 attempt'
       )
@@ -855,7 +884,7 @@ describe('🎓 BITCOIN COMPUTER QUIZ PLATFORM - COMPLETE FLOW TESTS', function()
       try {
         const { tx } = await student1Computer.encode({
           mod: attemptModuleSpec,
-          exp: `new QuizAttempt("${student1Computer.getPublicKey()}", "${quizContract._rev}", "${commitment}", BigInt(${lowFee}))`
+          exp: `new QuizAttempt("${student1Computer.getPublicKey()}", "${quizContract._rev}", "${commitment}", BigInt(${lowFee}), "${teacherComputer.getPublicKey()}")`
         })
 
         await student1Computer.broadcast(tx)
@@ -873,7 +902,7 @@ describe('🎓 BITCOIN COMPUTER QUIZ PLATFORM - COMPLETE FLOW TESTS', function()
       try {
         const { tx } = await student1Computer.encode({
           mod: attemptModuleSpec,
-          exp: `new QuizAttempt("${student1Computer.getPublicKey()}", "${quizContract._rev}", "", BigInt(${entryFee}))`
+          exp: `new QuizAttempt("${student1Computer.getPublicKey()}", "${quizContract._rev}", "", BigInt(${entryFee}), "${teacherComputer.getPublicKey()}")`
         })
 
         await student1Computer.broadcast(tx)
@@ -1228,6 +1257,159 @@ describe('🎓 BITCOIN COMPUTER QUIZ PLATFORM - COMPLETE FLOW TESTS', function()
   })
 
   // ============================================================================
+  // TEST 6.5: TEACHER COLLECTS ENTRY FEES
+  // ============================================================================
+
+  describe('💵 Phase 6: Teacher Collects Entry Fees', function() {
+
+    it('should allow teacher to collect entry fees from all attempts', async function() {
+      console.log('\n  💵 Teacher collecting entry fees...')
+
+      const teacherBalanceBefore = (await teacherComputer.getBalance()).balance
+      console.log(`    Teacher balance before: ${teacherBalanceBefore.toLocaleString()} sats`)
+
+      // Get the completed quiz
+      const [latestQuizRev] = await teacherComputer.query({ ids: [quizContract._id] })
+      const completedQuiz = await teacherComputer.sync(latestQuizRev)
+
+      console.log(`    Quiz status: ${completedQuiz.status}`)
+      console.log(`    Collecting from 3 attempts...`)
+
+      // Collect entry fees from each student attempt
+      // Map attempts to their student computers
+      const attemptData = [
+        { attempt: attempt1, computer: student1Computer, num: 1 },
+        { attempt: attempt2, computer: student2Computer, num: 2 },
+        { attempt: attempt3, computer: student3Computer, num: 3 }
+      ]
+      let totalCollected = 0n
+
+      for (const { attempt, computer, num } of attemptData) {
+        console.log(`    \n    Student ${num} - Step 1: Transfer ownership`)
+
+        // Sync to get latest revision using student's computer
+        let [latestAttemptRev] = await computer.query({ ids: [attempt._id] })
+        let attemptContract = await computer.sync(latestAttemptRev)
+
+        console.log(`      Status: ${attemptContract.status}`)
+        console.log(`      Entry fee: ${attemptContract._satoshis.toLocaleString()} sats`)
+
+        // Step 1: Student transfers ownership to teacher
+        const { tx: transferTx } = await withRetry(
+          () => computer.encodeCall({
+            target: attemptContract,
+            property: 'transferOwnershipToTeacher',
+            args: [completedQuiz],
+            mod: attemptModuleSpec
+          }),
+          `Student ${num} transfers ownership`
+        )
+
+        await withRetry(
+          () => computer.broadcast(transferTx),
+          `Student ${num} broadcasts ownership transfer`
+        )
+
+        console.log(`      ✅ Ownership transferred to teacher`)
+        await sleep(2000)
+
+        // Step 2: Teacher claims the entry fee
+        console.log(`    Student ${num} - Step 2: Teacher claims entry fee`)
+
+        // Sync again to get updated contract with new ownership
+        ;[latestAttemptRev] = await teacherComputer.query({ ids: [attempt._id] })
+        attemptContract = await teacherComputer.sync(latestAttemptRev)
+
+        const { tx: claimTx } = await withRetry(
+          () => teacherComputer.encodeCall({
+            target: attemptContract,
+            property: 'claimEntryFee',
+            args: [],
+            mod: attemptModuleSpec
+          }),
+          `Teacher claims entry fee from Student ${num}`
+        )
+
+        await withRetry(
+          () => teacherComputer.broadcast(claimTx),
+          `Teacher broadcasts claim for Student ${num}`
+        )
+
+        console.log(`      ✅ Entry fee claimed by teacher`)
+
+        // Calculate collected amount (entry fee minus dust)
+        const collected = attemptContract._satoshis - 546n
+        totalCollected += collected
+
+        await sleep(2000)
+      }
+
+      console.log(`\n    Total entry fees collected: ${totalCollected.toLocaleString()} sats`)
+
+      await sleep(3000)
+
+      const teacherBalanceAfter = (await teacherComputer.getBalance()).balance
+      displayBalanceChange('Teacher Balance', teacherBalanceBefore, teacherBalanceAfter)
+
+      const balanceIncrease = teacherBalanceAfter - teacherBalanceBefore
+      console.log(`    Balance increased by: ${balanceIncrease.toLocaleString()} sats`)
+      console.log(`    Expected increase (before gas): ${totalCollected.toLocaleString()} sats`)
+      console.log(`    Gas cost for collection: ~${(totalCollected - balanceIncrease).toLocaleString()} sats`)
+
+      expect(teacherBalanceAfter).to.be.greaterThan(teacherBalanceBefore)
+      expect(balanceIncrease).to.be.greaterThan(0n) // Received entry fees (minus gas)
+    })
+
+    it('should verify all attempts are marked as collected', async function() {
+      console.log('\n  🔍 Verifying collection status...')
+
+      const attempts = [attempt1, attempt2, attempt3]
+
+      for (let i = 0; i < attempts.length; i++) {
+        const attempt = attempts[i]
+        const [latestRev] = await teacherComputer.query({ ids: [attempt._id] })
+        const attemptContract = await teacherComputer.sync(latestRev)
+
+        console.log(`    Student ${i + 1} attempt:`)
+        console.log(`      Status: ${attemptContract.status}`)
+        console.log(`      Satoshis: ${attemptContract._satoshis.toLocaleString()}`)
+
+        expect(attemptContract.status).to.equal('forfeited')
+        expect(attemptContract._satoshis).to.equal(546n) // Reduced to dust
+      }
+
+      console.log(`    ✅ All attempts marked as collected`)
+    })
+
+    it('should prevent double-collection of entry fees', async function() {
+      console.log('\n  ❌ Testing: Double-collection prevention...')
+
+      const [latestQuizRev] = await teacherComputer.query({ ids: [quizContract._id] })
+      const completedQuiz = await teacherComputer.sync(latestQuizRev)
+
+      const [latestAttemptRev] = await teacherComputer.query({ ids: [attempt1._id] })
+      const attemptContract = await teacherComputer.sync(latestAttemptRev)
+
+      try {
+        // Try to claim entry fee again (should fail because status is already 'forfeited')
+        const { tx } = await teacherComputer.encodeCall({
+          target: attemptContract,
+          property: 'claimEntryFee',
+          args: [],
+          mod: attemptModuleSpec
+        })
+
+        await teacherComputer.broadcast(tx)
+
+        expect.fail('Should have thrown error for double-claim')
+      } catch (error) {
+        console.log(`    ✅ Correctly rejected: ${error.message}`)
+        expect(error.message).to.include('Ownership must be transferred first')
+      }
+    })
+  })
+
+  // ============================================================================
   // TEST 8: FINAL BALANCE VERIFICATION
   // ============================================================================
 
@@ -1246,10 +1428,14 @@ describe('🎓 BITCOIN COMPUTER QUIZ PLATFORM - COMPLETE FLOW TESTS', function()
       console.log('\n  📊 TEACHER:')
       displayBalanceChange('  Teacher', teacherInitialBalance, teacherFinalBalance)
       const teacherChange = teacherFinalBalance - teacherInitialBalance
+      const totalEntryFees = entryFee * 3n
+      const entryFeesMinusDust = (entryFee - 546n) * 3n // Entry fees collected (minus dust)
       console.log(`\n      Analysis:`)
       console.log(`        - Paid prize pool: -${prizePool.toLocaleString()} sats`)
-      console.log(`        - Gas costs: ~${(prizePool + teacherChange).toLocaleString()} sats`)
-      console.log(`        - Entry fees: +${(entryFee * 3n * 98n / 100n).toLocaleString()} sats (in contracts)`)
+      console.log(`        - Collected entry fees: +${entryFeesMinusDust.toLocaleString()} sats`)
+      console.log(`        - Net (before gas): ${(entryFeesMinusDust - prizePool).toLocaleString()} sats`)
+      console.log(`        - Total gas costs: ~${(entryFeesMinusDust - prizePool - teacherChange).toLocaleString()} sats`)
+      console.log(`        - Final net change: ${teacherChange.toLocaleString()} sats`)
 
       console.log('\n  📊 STUDENT 1 (WINNER):')
       displayBalanceChange('  Student 1', student1InitialBalance, student1FinalBalance)
@@ -1422,7 +1608,7 @@ describe('🎓 BITCOIN COMPUTER QUIZ PLATFORM - COMPLETE FLOW TESTS', function()
         const { tx: tx1, effect: effect1 } = await withRetry(
           () => student1Computer.encode({
             mod: attemptModuleSpec,
-            exp: `new QuizAttempt("${student1Computer.getPublicKey()}", "${abandonedQuiz._id}", "${commitment1}", BigInt(5000))`
+            exp: `new QuizAttempt("${student1Computer.getPublicKey()}", "${abandonedQuiz._id}", "${commitment1}", BigInt(5000), "${teacherComputer.getPublicKey()}")`
           }),
           'Student 1 attempt'
         )
@@ -1434,7 +1620,7 @@ describe('🎓 BITCOIN COMPUTER QUIZ PLATFORM - COMPLETE FLOW TESTS', function()
         const { tx: tx2, effect: effect2 } = await withRetry(
           () => student2Computer.encode({
             mod: attemptModuleSpec,
-            exp: `new QuizAttempt("${student2Computer.getPublicKey()}", "${abandonedQuiz._id}", "${commitment2}", BigInt(5000))`
+            exp: `new QuizAttempt("${student2Computer.getPublicKey()}", "${abandonedQuiz._id}", "${commitment2}", BigInt(5000), "${teacherComputer.getPublicKey()}")`
           }),
           'Student 2 attempt'
         )
@@ -1558,7 +1744,7 @@ describe('🎓 BITCOIN COMPUTER QUIZ PLATFORM - COMPLETE FLOW TESTS', function()
         const { tx: tx1, effect: effect1 } = await withRetry(
           () => student3Computer.encode({
             mod: attemptModuleSpec,
-            exp: `new QuizAttempt("${student3Computer.getPublicKey()}", "${revealedQuiz._id}", "${commitment}", BigInt(5000))`
+            exp: `new QuizAttempt("${student3Computer.getPublicKey()}", "${revealedQuiz._id}", "${commitment}", BigInt(5000), "${teacherComputer.getPublicKey()}")`
           }),
           'Student 3 attempt'
         )

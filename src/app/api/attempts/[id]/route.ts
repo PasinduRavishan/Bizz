@@ -75,7 +75,7 @@ export async function GET(
       select: { teacherId: true }
     })
 
-    const isStudent = attempt.studentId === session.user.id
+    const isStudent = attempt.userId === session.user.id
     const isTeacher = quiz?.teacherId === session.user.id
 
     if (!isStudent && !isTeacher) {

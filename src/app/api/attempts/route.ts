@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
         where: { address: studentAddress }
       })
       if (student) {
-        where.studentId = student.id
+        where.userId = student.id
       }
     }
     

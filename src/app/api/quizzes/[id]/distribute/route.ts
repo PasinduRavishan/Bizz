@@ -60,6 +60,17 @@ export async function POST(
       )
     }
 
+    // ✅ NEW: Check distribution deadline
+    if (quiz.distributionDeadline && new Date() > quiz.distributionDeadline) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Distribution deadline has passed. Quiz can be marked as abandoned for student refunds.'
+        },
+        { status: 400 }
+      )
+    }
+
     console.log(`🎁 Manual payment distribution triggered for quiz ${quiz.id}`)
 
     // Process complete payments

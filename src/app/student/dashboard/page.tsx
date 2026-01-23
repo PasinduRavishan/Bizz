@@ -8,6 +8,8 @@ import { Card, CardBody } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { WalletBalance } from '@/components/wallet/WalletBalance'
 import { StudentAttemptDetails } from '@/components/quiz/StudentAttemptDetails'
+import { RefundClaimModal } from '@/components/quiz/RefundClaimModal'
+import { CountdownTimer } from '@/components/ui/CountdownTimer'
 
 interface QuizAttempt {
   id: string
@@ -25,16 +27,23 @@ interface QuizAttempt {
     status: string
     deadline: string
     teacherRevealDeadline: string
+    distributionDeadline?: string
+    entryFee: string
   }
+  refundReason?: string
+  refundAmount?: string
 }
 
 interface DashboardData {
   attempts: QuizAttempt[]
+  refundableAttempts: QuizAttempt[]
   stats: {
     totalAttempts: number
     completedAttempts: number
     passedQuizzes: number
     totalEarnings: string
+    totalRefundable: number
+    refundableCount: number
   }
 }
 
@@ -44,6 +53,7 @@ export default function StudentDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(null)
+  const [showRefundModal, setShowRefundModal] = useState(false)
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -87,9 +97,15 @@ export default function StudentDashboard() {
       REVEALED: 'info',
       VERIFIED: 'success',
       FAILED: 'danger',
+      REFUNDED: 'refunded',
     } as const
 
     return <Badge variant={variants[status as keyof typeof variants] || 'default'}>{status}</Badge>
+  }
+
+  const formatSatoshis = (sats: string | number) => {
+    const amount = typeof sats === 'string' ? parseInt(sats) : sats
+    return amount.toLocaleString()
   }
 
   return (
@@ -109,6 +125,31 @@ export default function StudentDashboard() {
       <div className="mb-8">
         <WalletBalance />
       </div>
+
+      {/* Refund Available Banner */}
+      {!loading && !error && data && data.refundableAttempts && data.refundableAttempts.length > 0 && (
+        <div className="mb-6 p-4 bg-gradient-to-r from-purple-500 to-blue-500 rounded-lg text-white">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-2xl">💸</span>
+                <h3 className="text-lg font-bold">Refunds Available</h3>
+              </div>
+              <p className="text-sm text-white/90 mb-3">
+                You have {data.refundableAttempts.length} quiz attempt(s) eligible for refund due to abandoned quizzes.
+                Total refundable: {formatSatoshis(data.stats.totalRefundable)} sats
+              </p>
+              <Button
+                variant="outline"
+                className="bg-white text-purple-600 hover:bg-gray-100 dark:bg-white dark:text-purple-600 dark:hover:bg-gray-100"
+                onClick={() => setShowRefundModal(true)}
+              >
+                Claim {data.refundableAttempts.length} Refund{data.refundableAttempts.length > 1 ? 's' : ''}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid md:grid-cols-4 gap-4 mb-8">
@@ -313,6 +354,19 @@ export default function StudentDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Refund Claim Modal */}
+      {showRefundModal && data && data.refundableAttempts && (
+        <RefundClaimModal
+          refundableAttempts={data.refundableAttempts}
+          onClose={() => setShowRefundModal(false)}
+          onSuccess={() => {
+            setShowRefundModal(false)
+            // Refresh dashboard
+            window.location.reload()
+          }}
+        />
       )}
     </main>
   )

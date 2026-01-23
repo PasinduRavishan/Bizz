@@ -16,6 +16,7 @@ export class QuizAttempt extends Contract {
   student!: string
   quizRef!: string
   answerCommitment!: string
+  quizTeacher!: string
   revealedAnswers!: string[] | null
   nonce!: string | null
   score!: number | null
@@ -25,20 +26,22 @@ export class QuizAttempt extends Contract {
   revealTimestamp!: number | null
   version!: string
 
-  constructor(student: string, quizRef: string, answerCommitment: string, entryFee: bigint) {
+  constructor(student: string, quizRef: string, answerCommitment: string, entryFee: bigint, quizTeacher: string) {
     if (!student) throw new Error('Student public key required')
     if (!quizRef) throw new Error('Quiz reference required')
     if (!answerCommitment) throw new Error('Answer commitment required')
     if (entryFee < BigInt(5000)) {
       throw new Error('Entry fee must be at least 5,000 satoshis')
     }
+    if (!quizTeacher) throw new Error('Quiz teacher public key required')
 
     super({
-      _owners: [student],
+      _owners: [student], // Student owns initially, teacher gets ownership during collection
       _satoshis: entryFee,
       student,
       quizRef,
       answerCommitment,
+      quizTeacher, // Store teacher public key for later collection
       revealedAnswers: null,
       nonce: null,
       score: null,
@@ -80,6 +83,33 @@ export class QuizAttempt extends Contract {
   fail(): void {
     this.status = 'failed'
     this.passed = false
+  }
+
+  transferOwnershipToTeacher(quiz: { status: string }): void {
+    // Step 1: Student transfers ownership to teacher
+    // MUST be called by STUDENT (current owner) to authorize the ownership transfer
+    if (quiz.status !== 'completed') {
+      throw new Error('Cannot transfer ownership: quiz not completed')
+    }
+    if (this.status === 'ownership-transferred' || this.status === 'forfeited') {
+      throw new Error('Ownership already transferred')
+    }
+
+    // Transfer ownership to teacher (creates new UTXO with teacher as owner)
+    this._owners = [this.quizTeacher]
+    this.status = 'ownership-transferred'
+  }
+
+  claimEntryFee(): void {
+    // Step 2: Teacher claims the entry fee
+    // MUST be called by TEACHER (new owner) after ownership transfer
+    if (this.status !== 'ownership-transferred') {
+      throw new Error('Ownership must be transferred first')
+    }
+
+    // Reduce to dust - funds go to caller (teacher)
+    this._satoshis = BigInt(546)
+    this.status = 'forfeited'
   }
 
   claimRefund(quiz: { status: string }): void {

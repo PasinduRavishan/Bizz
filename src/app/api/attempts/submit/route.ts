@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { hashCommitment, generateNonce, encryptAttemptRevealData } from '@/lib/crypto'
 import { prisma } from '@/lib/prisma'
 import { getUserWallet } from '@/lib/wallet-service'
+import { ensureWalletHasUTXOs } from '@/lib/wallet-funding'
 
 export const runtime = 'nodejs'
 
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check if quiz exists and get deadline
+    // Check if quiz exists and get deadline + teacher info
     const quizRecord = await prisma.quiz.findFirst({
       where: {
         OR: [
@@ -76,7 +77,12 @@ export async function POST(request: NextRequest) {
         id: true,
         deadline: true,
         status: true,
-        questionCount: true
+        questionCount: true,
+        teacher: {
+          select: {
+            publicKey: true
+          }
+        }
       }
     })
 
@@ -147,11 +153,33 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Ensure wallet has spendable UTXOs
+    console.log('💰 Ensuring wallet has spendable UTXOs...')
+    try {
+      const hasBalance = balance > BigInt(requiredBalance)
+
+      await ensureWalletHasUTXOs(
+        session.user.id,
+        100000, // Minimum UTXO size
+        hasBalance // Skip check if balance is sufficient (will use contract funds)
+      )
+    } catch (fundingError) {
+      console.error('❌ Wallet funding check failed:', fundingError)
+      return NextResponse.json(
+        {
+          success: false,
+          error: fundingError instanceof Error ? fundingError.message : 'Failed to ensure wallet has funds',
+          details: 'Your wallet needs spendable Bitcoin to submit attempts. Please contact support.'
+        },
+        { status: 500 }
+      )
+    }
+
     // Define QuizAttempt contract inline (pure JavaScript, no imports)
     // Following the same pattern as Quiz contract deployment
     const QuizAttemptContract = `
       export class QuizAttempt extends Contract {
-        constructor(student, quizRef, answerCommitment, entryFee) {
+        constructor(student, quizRef, answerCommitment, entryFee, quizTeacher) {
           if (!student) throw new Error('Student public key required')
           if (!quizRef) throw new Error('Quiz reference required')
           if (!answerCommitment) throw new Error('Answer commitment required')
@@ -164,6 +192,7 @@ export async function POST(request: NextRequest) {
             _satoshis: entryFee,
             student: student,
             quizRef: quizRef,
+            quizTeacher: quizTeacher,
             answerCommitment: answerCommitment,
             revealedAnswers: null,
             nonce: null,
@@ -172,7 +201,7 @@ export async function POST(request: NextRequest) {
             status: 'committed',
             submitTimestamp: Date.now(),
             revealTimestamp: null,
-            version: '1.0.0'
+            version: '1.1.0'
           })
         }
 
@@ -206,6 +235,41 @@ export async function POST(request: NextRequest) {
           this.passed = false
         }
 
+        claimRefund(quiz) {
+          // Validate quiz reference
+          if (this.quizRef !== quiz._id) {
+            throw new Error('Quiz reference mismatch')
+          }
+
+          if (this.status === 'refunded') {
+            throw new Error('Refund already claimed')
+          }
+
+          // Scenario 1: Teacher didn't reveal before deadline
+          const teacherMissedReveal = (
+            quiz.status === 'active' &&
+            Date.now() > quiz.teacherRevealDeadline
+          )
+
+          // Scenario 2: Teacher revealed but didn't distribute
+          const teacherAbandonedAfterReveal = (
+            quiz.status === 'revealed' &&
+            Date.now() > quiz.distributionDeadline
+          )
+
+          // Scenario 3: Quiz explicitly marked abandoned
+          const quizAbandoned = (quiz.status === 'abandoned')
+
+          if (!teacherMissedReveal && !teacherAbandonedAfterReveal && !quizAbandoned) {
+            throw new Error('Cannot claim refund: quiz not abandoned')
+          }
+
+          // Cash out entry fee to student
+          this._satoshis = 546n
+          this.status = 'refunded'
+          this.refundedAt = Date.now()
+        }
+
         getInfo() {
           return {
             attemptId: this._id,
@@ -224,14 +288,97 @@ export async function POST(request: NextRequest) {
     `
 
     console.log('📦 Deploying QuizAttempt contract module...')
-    const moduleSpecifier = await computer.deploy(QuizAttemptContract)
+
+    // Helper function for mempool retry
+    async function withMempoolRetry<T>(
+      operation: () => Promise<T>,
+      operationName: string,
+      maxRetries: number = 5
+    ): Promise<T> {
+      let lastError: Error | null = null
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          return await operation()
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error))
+          const isMempoolConflict = lastError.message.includes('txn-mempool-conflict')
+          const isTooLongChain = lastError.message.includes('too-long-mempool-chain')
+          const isAlreadyInBlockchain = lastError.message.includes('Transaction already in block chain')
+
+          if (isAlreadyInBlockchain) {
+            console.log(`  ℹ️  Module already deployed, continuing...`)
+            // For deploy operations, if already in blockchain, we can try to continue
+            // The next operation (encode/broadcast) will use the existing module
+            throw lastError // Still throw to handle properly in calling code
+          }
+
+          if (isTooLongChain) {
+            // On regtest, use faucet to mine blocks and confirm transactions
+            const isRegtest = process.env.BITCOIN_NETWORK === 'regtest'
+
+            if (isRegtest) {
+              console.log(`  ⛏️  ${operationName}: Mining blocks on regtest to confirm transactions... (attempt ${attempt}/${maxRetries})`)
+              try {
+                // Fund with faucet - this mines blocks and confirms pending transactions
+                await computer.faucet(0.01e8) // Small amount, mainly to mine blocks
+                console.log(`  ✅ Blocks mined, transactions confirmed`)
+                // Small delay to let blockchain sync
+                await new Promise(resolve => setTimeout(resolve, 2000))
+                continue
+              } catch (faucetError) {
+                console.error(`  ⚠️  Faucet failed:`, faucetError)
+                // Fall through to regular delay logic
+              }
+            }
+
+            if (attempt === maxRetries) {
+              console.error(`\n⚠️  MEMPOOL ANCESTOR LIMIT REACHED`)
+              console.error(`Bitcoin allows maximum 25 unconfirmed transactions in a chain.`)
+              console.error(`You have too many pending transactions. Solutions:`)
+              console.error(`  1. Wait 10-20 minutes for blockchain confirmations`)
+              console.error(`  2. Use a different wallet with confirmed UTXOs`)
+              if (isRegtest) {
+                console.error(`  3. On regtest: faucet mining failed, try restarting Bitcoin node`)
+              }
+              throw new Error(`Mempool ancestor limit: ${lastError.message}`)
+            }
+            console.log(`  ⏳ Mempool chain too long, waiting for confirmations... (attempt ${attempt}/${maxRetries})`)
+            await new Promise(resolve => setTimeout(resolve, 10000))
+            continue
+          }
+
+          if (!isMempoolConflict) {
+            throw lastError
+          }
+
+          if (attempt === maxRetries) {
+            throw new Error(`${operationName} failed after ${maxRetries} attempts: ${lastError.message}`)
+          }
+
+          const delay = attempt * 2000
+          console.log(`  ⏳ ${operationName} mempool conflict, retrying in ${delay/1000}s... (attempt ${attempt}/${maxRetries})`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+        }
+      }
+
+      throw lastError || new Error(`${operationName} failed`)
+    }
+
+    const moduleSpecifier = await withMempoolRetry(
+      () => computer.deploy(QuizAttemptContract),
+      'Deploy QuizAttempt module',
+      5
+    )
     console.log('✅ Module deployed:', moduleSpecifier)
 
     console.log('📝 Creating attempt instance from module...')
 
+    const teacherPublicKey = quizRecord.teacher?.publicKey || ''
+
     const { tx, effect } = await computer.encode({
       mod: moduleSpecifier,
-      exp: `new QuizAttempt("${studentPublicKey}", "${body.quizContractRev}", "${answerCommitment}", BigInt(${body.entryFee}))`
+      exp: `new QuizAttempt("${studentPublicKey}", "${body.quizContractRev}", "${answerCommitment}", BigInt(${body.entryFee}), "${teacherPublicKey}")`
     })
 
     const txId = await computer.broadcast(tx)
@@ -291,8 +438,8 @@ export async function POST(request: NextRequest) {
           data: {
             contractId: attempt._id,
             contractRev: attempt._rev,
-            moduleSpecifier: moduleSpecifier,  // ✅ Store module specifier for reveal
-            studentId: session.user.id,
+            moduleSpecifier: moduleSpecifier as string,  // ✅ Store module specifier for reveal
+            userId: session.user.id,
             quizId: quiz.id,
             answerCommitment: answerCommitment,
             status: 'COMMITTED',

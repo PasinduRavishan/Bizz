@@ -36,8 +36,11 @@ export async function GET() {
     // Calculate stats
     const totalQuizzes = quizzes.length
     const activeQuizzes = quizzes.filter(q => q.status === 'ACTIVE').length
+    const revealedQuizzes = quizzes.filter(q => q.status === 'REVEALED').length
+    const completedQuizzes = quizzes.filter(q => q.status === 'COMPLETED').length
+    const abandonedQuizzes = quizzes.filter(q => q.status === 'REFUNDED' || q.status === 'ABANDONED').length
     const totalAttempts = quizzes.reduce((sum, q) => sum + q._count.attempts, 0)
-    
+
     // Calculate total revenue (entry fees collected)
     const totalRevenue = quizzes.reduce((sum, q) => {
       const revenue = Number(q.entryFee) * q._count.attempts
@@ -46,6 +49,14 @@ export async function GET() {
 
     // Format revenue in BTC
     const revenueBTC = (totalRevenue / 100000000).toFixed(8)
+
+    // Count refunded attempts across all quizzes
+    const refundedAttempts = await prisma.quizAttempt.count({
+      where: {
+        quiz: { teacherId: session.user.id },
+        status: 'REFUNDED'
+      }
+    })
 
     return NextResponse.json({
       quizzes: quizzes.map(quiz => ({
@@ -56,8 +67,12 @@ export async function GET() {
       stats: {
         totalQuizzes,
         activeQuizzes,
+        revealedQuizzes,
+        completedQuizzes,
+        abandonedQuizzes,
         totalAttempts,
-        totalRevenue: revenueBTC
+        totalRevenue: revenueBTC,
+        refundedAttempts
       }
     })
   } catch (error) {

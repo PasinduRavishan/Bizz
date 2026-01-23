@@ -33,7 +33,8 @@ async function withMempoolRetry<T>(
   operation: () => Promise<T>,
   operationName: string,
   maxRetries: number = 5,
-  initialDelayMs: number = 3000
+  initialDelayMs: number = 3000,
+  computer?: any  // Optional Computer instance for regtest block mining
 ): Promise<T> {
   let lastError: Error | null = null
 
@@ -47,13 +48,34 @@ async function withMempoolRetry<T>(
 
       // Special handling for too-long-mempool-chain - needs much longer waits
       if (isTooLongChain) {
+        // On regtest, use faucet to mine blocks and confirm transactions
+        const isRegtest = process.env.BITCOIN_NETWORK === 'regtest'
+
+        if (isRegtest && computer) {
+          console.log(`  ⛏️  ${operationName}: Mining blocks on regtest to confirm transactions... (attempt ${attempt}/${maxRetries})`)
+          try {
+            // Fund with faucet - this mines blocks and confirms pending transactions
+            await computer.faucet(0.01e8) // Small amount, mainly to mine blocks
+            console.log(`  ✅ Blocks mined, transactions confirmed`)
+            // Small delay to let blockchain sync
+            await new Promise(resolve => setTimeout(resolve, 2000))
+            continue
+          } catch (faucetError) {
+            console.error(`  ⚠️  Faucet failed:`, faucetError)
+            // Fall through to regular delay logic
+          }
+        }
+
         if (attempt === maxRetries) {
           console.error(`\n⚠️  MEMPOOL ANCESTOR LIMIT REACHED`)
           console.error(`Bitcoin allows maximum 25 unconfirmed transactions in a chain.`)
           console.error(`You have too many pending transactions. Wait 10-20 minutes.`)
+          if (isRegtest) {
+            console.error(`On regtest: faucet mining failed, try restarting Bitcoin node`)
+          }
           throw new Error(`Mempool ancestor limit exceeded. Please wait for pending transactions to confirm before attempting more operations.`)
         }
-        
+
         // Much longer delays for ancestor chain issues (15s, 30s, 60s, 120s, 240s)
         const delayMs = 15000 * Math.pow(2, attempt - 1)
         console.log(`  ⏳ ${operationName}: TOO MANY UNCONFIRMED ANCESTORS, waiting ${delayMs/1000}s for confirmations... (${attempt}/${maxRetries})`)
@@ -187,36 +209,31 @@ export async function distributePrizesToWinners(quizId: string, revealedQuizRev?
 
   console.log(`  ✅ Quiz synced - Status: ${quizContract.status}, Satoshis: ${quizContract._satoshis}`)
 
-  // Prepare winner data for distributePrizes
-  const winnersData = quiz.winners.map(w => ({
-    student: w.attempt.student.publicKey,
-    attemptId: w.attemptId
-  }))
+  console.log(`\n  💰 Marking quiz as completed via distributePrizes()...`)
 
-  console.log(`\n  💰 Calling Quiz.distributePrizes() via encode/broadcast pattern...`)
-  console.log(`  This will:`)
-  console.log(`    1. Create Payment contracts for ${winnersData.length} winners`)
-  console.log(`    2. Use ${quizContract._satoshis - BigInt(546)} sats FROM Quiz contract`)
-  console.log(`    3. Reduce Quiz satoshis to dust (546 sats)`)
-  console.log(`    4. Teacher's wallet NOT touched (funds come from Quiz contract)`)
-
-  let paymentRevs: string[]
   let distributeTxId: string
-  
+
   try {
-    // Use encode/broadcast pattern - the ONLY way that works with Bitcoin Computer
-    // This calls distributePrizes on the Quiz contract, which creates Payment contracts
-    // using the Quiz contract's locked satoshis
-    const { tx, effect } = await withMempoolRetry(
+    // Check if moduleSpecifier is available
+    if (!quiz.moduleSpecifier) {
+      throw new Error('Quiz module specifier not found. Cannot call distributePrizes method.')
+    }
+
+    // Use encodeCall pattern to mark quiz as completed
+    // distributePrizes() just changes quiz status to 'completed'
+    const { tx } = await withMempoolRetry(
       async () => {
-        return await teacherComputer.encode({
-          exp: `${quizRevToUse}.distributePrizes(${JSON.stringify(winnersData)})`,
-          env: { [quizRevToUse]: quizContract }
+        return await teacherComputer.encodeCall({
+          target: quizContract,
+          property: 'distributePrizes',
+          args: [],  // No args needed - just marks as completed
+          mod: quiz.moduleSpecifier
         })
       },
       'Encode distributePrizes transaction',
       3,
-      3000
+      3000,
+      teacherComputer  // Pass computer for regtest block mining
     )
 
     console.log(`  ✅ Transaction encoded successfully`)
@@ -228,61 +245,52 @@ export async function distributePrizesToWinners(quizId: string, revealedQuizRev?
       },
       'Broadcast distributePrizes transaction',
       3,
-      3000
+      3000,
+      teacherComputer  // Pass computer for regtest block mining
     )
 
     console.log(`  ✅ Transaction broadcasted: ${distributeTxId}`)
-    console.log(`  ⏳ Waiting 5 seconds for blockchain confirmation...`)
-    await new Promise(resolve => setTimeout(resolve, 5000))
+    console.log(`  ⏳ Waiting 3 seconds for blockchain confirmation...`)
+    await new Promise(resolve => setTimeout(resolve, 3000))
 
-    // Extract payment revisions from effect
-    paymentRevs = effect.res as string[]
-    
-    if (!Array.isArray(paymentRevs) || paymentRevs.length !== winnersData.length) {
-      throw new Error(`Expected ${winnersData.length} payment revisions, got ${paymentRevs?.length || 0}`)
-    }
+    // Query for latest revision and sync
+    const [latestRev] = await teacherComputer.query({ ids: [quiz.contractId] })
+    const updatedQuiz = await teacherComputer.sync(latestRev)
+    console.log(`  ✅ Quiz status: ${quizContract.status} → ${updatedQuiz.status}`)
 
-    console.log(`  ✅ distributePrizes SUCCESS!`)
-    console.log(`  Created ${paymentRevs.length} Payment contracts from Quiz's locked funds`)
-
-    // Re-sync to verify satoshis were reduced
-    const updatedQuiz = await teacherComputer.sync(quizRevToUse)
-    console.log(`  Quiz satoshis: ${quizContract._satoshis} → ${updatedQuiz._satoshis}`)
-    console.log(`  Quiz status: ${quizContract.status} → ${updatedQuiz.status}`)
-    
-    if (updatedQuiz._satoshis > BigInt(546)) {
-      console.log(`  ⚠️  WARNING: Quiz still has ${updatedQuiz._satoshis} sats (expected 546)`)
+    if (updatedQuiz.status !== 'completed') {
+      console.log(`  ⚠️  WARNING: Quiz status is '${updatedQuiz.status}' (expected 'completed')`)
+      console.log(`  Latest revision: ${latestRev}`)
     }
   } catch (error) {
     console.error(`  ❌ distributePrizes FAILED:`, error)
-    throw new Error(`Failed to distribute prizes from Quiz contract: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    throw new Error(`Failed to mark quiz as completed: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
 
-  // Update database with Payment contract revisions
+  // Winners are already marked in database with their prize amounts
+  // Mark them as paid in the database
+  console.log(`\n  💾 Marking ${quiz.winners.length} winners as paid...`)
   const paymentResults = []
   let totalDistributed = BigInt(0)
 
   for (let i = 0; i < quiz.winners.length; i++) {
     const winner = quiz.winners[i]
-    const paymentRev = paymentRevs[i]
 
     try {
-      console.log(`\n  💾 Updating DB for winner ${i + 1}:`)
-      console.log(`    Student: ${winner.attempt.student.name}`)
-      console.log(`    Payment Rev: ${paymentRev}`)
+      console.log(`    Winner ${i + 1}: ${winner.attempt.student.name} - ${winner.prizeAmount} sats`)
 
-      // Mark winner as paid
+      // Mark winner as paid with the distributePrizes transaction
       await prisma.winner.update({
         where: { id: winner.id },
         data: {
           paid: true,
-          paidTxHash: paymentRev
+          paidTxHash: distributeTxId  // Use the distributePrizes tx as proof of completion
         }
       })
 
       // Update student earnings
       await prisma.user.update({
-        where: { id: winner.attempt.studentId },
+        where: { id: winner.attempt.userId },
         data: {
           totalEarnings: { increment: winner.prizeAmount }
         }
@@ -300,14 +308,14 @@ export async function distributePrizesToWinners(quizId: string, revealedQuizRev?
 
       paymentResults.push({
         winnerId: winner.id,
-        studentId: winner.attempt.studentId,
+        userId: winner.attempt.userId,
         studentAddress: winner.attempt.student.address,
         studentPublicKey: winner.attempt.student.publicKey,
         amount: winner.prizeAmount.toString(),
-        paymentRev: paymentRev,
-        txId: paymentRev.split(':')[0],
+        paymentRev: distributeTxId,  // Use distributePrizes tx as payment proof
+        txId: distributeTxId,
         status: 'success' as const,
-        canClaim: true
+        canClaim: true  // Winners can now see they won (no separate claim needed)
       })
 
       console.log(`    ✅ DB updated`)
@@ -317,11 +325,11 @@ export async function distributePrizesToWinners(quizId: string, revealedQuizRev?
 
       paymentResults.push({
         winnerId: winner.id,
-        studentId: winner.attempt.studentId,
+        userId: winner.attempt.userId,
         studentAddress: winner.attempt.student.address || 'N/A',
         studentPublicKey: winner.attempt.student.publicKey || 'N/A',
         amount: winner.prizeAmount.toString(),
-        paymentRev: paymentRev || 'DB_FAILED',
+        paymentRev: 'DB_FAILED',
         txId: 'DB_FAILED',
         status: 'failed' as const,
         canClaim: false,
@@ -399,7 +407,7 @@ export async function payEntryFeesToTeacher(quizId: string) {
   // For now, we track the amounts for display purposes
   const payments = quiz.attempts.map(attempt => ({
     attemptId: attempt.id,
-    studentId: attempt.studentId,
+    userId: attempt.userId,
     teacherAmount: (quiz.entryFee - BigInt(Math.floor(Number(quiz.entryFee) * quiz.platformFee))).toString(),
     platformFee: BigInt(Math.floor(Number(quiz.entryFee) * quiz.platformFee)).toString(),
     status: 'accounted' as const // Marked as accounted (funds in contracts)
@@ -480,13 +488,13 @@ async function refreshBalances(quizId: string) {
   const quiz = await prisma.quiz.findUnique({
     where: { id: quizId },
     include: {
-      attempts: { select: { studentId: true } }
+      attempts: { select: { userId: true } }
     }
   })
 
   if (!quiz) return
 
-  const userIds = new Set([quiz.teacherId, ...quiz.attempts.map(a => a.studentId)])
+  const userIds = new Set([quiz.teacherId, ...quiz.attempts.map(a => a.userId)])
 
   for (const userId of userIds) {
     try {

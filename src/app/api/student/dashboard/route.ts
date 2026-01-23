@@ -18,7 +18,7 @@ export async function GET() {
     // Fetch user's quiz attempts with quiz details
     const attempts = await prisma.quizAttempt.findMany({
       where: {
-        studentId: session.user.id
+        userId: session.user.id
       },
       include: {
         quiz: {
@@ -30,8 +30,9 @@ export async function GET() {
             passThreshold: true,
             status: true,
             deadline: true,
-
-            teacherRevealDeadline: true
+            teacherRevealDeadline: true,
+            distributionDeadline: true,
+            entryFee: true
           }
         }
       },
@@ -51,16 +52,64 @@ export async function GET() {
     // Format earnings in BTC
     const earningsBTC = (totalEarnings / 100000000).toFixed(8)
 
+    // Calculate refundable attempts
+    const now = new Date()
+    const refundableAttempts = attempts.filter(attempt => {
+      // Already refunded
+      if (attempt.status === 'REFUNDED') return false
+
+      // Quiz is abandoned
+      if (attempt.quiz.status === 'REFUNDED' || attempt.quiz.status === 'ABANDONED') {
+        return true
+      }
+
+      // Quiz revealed but distribution deadline passed
+      if (
+        attempt.quiz.status === 'REVEALED' &&
+        attempt.quiz.distributionDeadline &&
+        now > new Date(attempt.quiz.distributionDeadline)
+      ) {
+        return true
+      }
+
+      return false
+    }).map(attempt => ({
+      ...attempt,
+      refundReason: attempt.quiz.status === 'REFUNDED' || attempt.quiz.status === 'ABANDONED'
+        ? 'Quiz was abandoned by teacher'
+        : 'Teacher missed distribution deadline',
+      refundAmount: attempt.quiz.entryFee
+    }))
+
+    const totalRefundable = refundableAttempts.reduce(
+      (sum, attempt) => sum + Number(attempt.quiz.entryFee),
+      0
+    )
+
     return NextResponse.json({
       attempts: attempts.map(attempt => ({
         ...attempt,
-        prizeAmount: attempt.prizeAmount?.toString() || null
+        prizeAmount: attempt.prizeAmount?.toString() || null,
+        quiz: {
+          ...attempt.quiz,
+          entryFee: attempt.quiz.entryFee.toString()
+        }
+      })),
+      refundableAttempts: refundableAttempts.map(attempt => ({
+        ...attempt,
+        prizeAmount: attempt.prizeAmount?.toString() || null,
+        quiz: {
+          ...attempt.quiz,
+          entryFee: attempt.quiz.entryFee.toString()
+        }
       })),
       stats: {
         totalAttempts,
         completedAttempts,
         passedQuizzes,
-        totalEarnings: earningsBTC
+        totalEarnings: earningsBTC,
+        totalRefundable,
+        refundableCount: refundableAttempts.length
       }
     })
   } catch (error) {

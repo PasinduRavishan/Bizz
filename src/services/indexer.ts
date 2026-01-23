@@ -441,7 +441,7 @@ export class BlockchainIndexer {
       data: {
         contractId: contract._id,
         contractRev: contract._rev,
-        studentId: student.id,
+        userId: student.id,
         quizId: quiz.id,
         answerCommitment: contract.answerCommitment,
         revealedAnswers: contract.revealedAnswers || [],
