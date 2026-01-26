@@ -110,6 +110,33 @@ export async function POST(request: NextRequest) {
 
     // Minimal Quiz contract - optimized for size limits
     const QuizContract = `
+      export class Payment extends Contract {
+        constructor(recipient, amount, purpose, reference) {
+          if (!recipient) throw new Error('Recipient required')
+          if (amount < 546n) throw new Error('Amount must be at least 546 satoshis')
+          if (!purpose) throw new Error('Purpose required')
+
+          super({
+            _owners: [recipient],
+            _satoshis: amount,
+            recipient,
+            amount,
+            purpose,
+            reference,
+            status: 'unclaimed',
+            createdAt: Date.now(),
+            claimedAt: null
+          })
+        }
+
+        claim() {
+          if (this.status === 'claimed') throw new Error('Payment already claimed')
+          this._satoshis = 546n
+          this.status = 'claimed'
+          this.claimedAt = Date.now()
+        }
+      }
+
       export class Quiz extends Contract {
         constructor(t, q, h, p, e, th, d, s, r, dist) {
           if (!t) throw new Error('Teacher required')

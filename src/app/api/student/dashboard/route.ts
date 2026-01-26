@@ -88,18 +88,40 @@ export async function GET() {
 
     return NextResponse.json({
       attempts: attempts.map(attempt => ({
-        ...attempt,
+        id: attempt.id,
+        contractId: attempt.contractId,
+        status: attempt.status,
+        score: attempt.score,
+        passed: attempt.passed,
         prizeAmount: attempt.prizeAmount?.toString() || null,
+        submitTimestamp: attempt.submitTimestamp.toISOString(),
+        revealTimestamp: attempt.revealTimestamp?.toISOString() || null,
+        answerCommitment: attempt.answerCommitment,
+        paymentContractRev: attempt.paymentContractRev,
         quiz: {
-          ...attempt.quiz,
+          id: attempt.quiz.id,
+          title: attempt.quiz.title,
+          description: attempt.quiz.description,
+          questionCount: attempt.quiz.questionCount,
+          passThreshold: attempt.quiz.passThreshold,
+          status: attempt.quiz.status,
+          deadline: attempt.quiz.deadline.toISOString(),
+          teacherRevealDeadline: attempt.quiz.teacherRevealDeadline?.toISOString() || null,
+          distributionDeadline: attempt.quiz.distributionDeadline?.toISOString() || null,
           entryFee: attempt.quiz.entryFee.toString()
         }
       })),
       refundableAttempts: refundableAttempts.map(attempt => ({
-        ...attempt,
+        id: attempt.id,
+        contractId: attempt.contractId,
+        status: attempt.status,
         prizeAmount: attempt.prizeAmount?.toString() || null,
+        refundReason: attempt.refundReason,
+        refundAmount: attempt.refundAmount.toString(),
         quiz: {
-          ...attempt.quiz,
+          id: attempt.quiz.id,
+          title: attempt.quiz.title,
+          status: attempt.quiz.status,
           entryFee: attempt.quiz.entryFee.toString()
         }
       })),

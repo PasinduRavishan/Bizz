@@ -24,6 +24,7 @@
 
 import { prisma } from './prisma'
 import { getUserWallet, getUserBalance } from './wallet-service'
+import { Payment } from '../../contracts/Quiz.deploy.js'
 
 /**
  * Utility function to wait for a transaction to clear the mempool
@@ -209,7 +210,7 @@ export async function distributePrizesToWinners(quizId: string, revealedQuizRev?
 
   console.log(`  ✅ Quiz synced - Status: ${quizContract.status}, Satoshis: ${quizContract._satoshis}`)
 
-  console.log(`\n  💰 Marking quiz as completed via distributePrizes()...`)
+  console.log(`\n  💰 Step 1: Marking quiz as completed via distributePrizes()...`)
 
   let distributeTxId: string
 
@@ -267,9 +268,10 @@ export async function distributePrizesToWinners(quizId: string, revealedQuizRev?
     throw new Error(`Failed to mark quiz as completed: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
 
-  // Winners are already marked in database with their prize amounts
-  // Mark them as paid in the database
-  console.log(`\n  💾 Marking ${quiz.winners.length} winners as paid...`)
+  console.log(`\n  💳 Step 2: Creating Payment contracts for ${quiz.winners.length} winners...`)
+  console.log(`  Prize pool: ${quiz.prizePool} sats`)
+  console.log(`  Prize per winner: ${quiz.prizePool / BigInt(quiz.winners.length)} sats`)
+
   const paymentResults = []
   let totalDistributed = BigInt(0)
 
@@ -277,18 +279,66 @@ export async function distributePrizesToWinners(quizId: string, revealedQuizRev?
     const winner = quiz.winners[i]
 
     try {
-      console.log(`    Winner ${i + 1}: ${winner.attempt.student.name} - ${winner.prizeAmount} sats`)
+      console.log(`\n    🎁 Winner ${i + 1}: ${winner.attempt.student.name}`)
+      console.log(`    Student Public Key: ${winner.attempt.student.publicKey}`)
+      console.log(`    Prize Amount: ${winner.prizeAmount} sats`)
 
-      // Mark winner as paid with the distributePrizes transaction
+      // Create Payment contract using Bitcoin Computer pattern (like in test)
+      // The Payment class is exported from the same module as Quiz (deployed together)
+      // NOTE: This requires the Quiz module to include the Payment class export
+      // If you get "Payment is not defined" error, the quiz was created with an old module
+      // that didn't include Payment. New quizzes created after this update will work.
+      const { tx: paymentTx, effect: paymentEffect } = await withMempoolRetry(
+        async () => {
+          return await teacherComputer.encode({
+            mod: quiz.moduleSpecifier,
+            exp: `new Payment("${winner.attempt.student.publicKey}", BigInt(${winner.prizeAmount}), "Quiz Prize - ${quiz.questionHashIPFS}", "${quiz.contractId}")`
+          })
+        },
+        `Create Payment contract for winner ${i + 1}`,
+        3,
+        3000,
+        teacherComputer
+      )
+
+      console.log(`    ✅ Payment transaction encoded`)
+
+      // Broadcast Payment contract creation
+      const paymentTxId = await withMempoolRetry(
+        async () => {
+          return await teacherComputer.broadcast(paymentTx)
+        },
+        `Broadcast Payment contract for winner ${i + 1}`,
+        3,
+        3000,
+        teacherComputer
+      )
+
+      const paymentContract = paymentEffect.res
+      const paymentRev = paymentContract._rev
+
+      console.log(`    ✅ Payment contract created!`)
+      console.log(`    Payment ID: ${paymentContract._id}`)
+      console.log(`    Payment Rev: ${paymentRev}`)
+      console.log(`    Payment TxId: ${paymentTxId}`)
+      console.log(`    Locked satoshis: ${paymentContract._satoshis} sats`)
+      console.log(`    Status: ${paymentContract.status}`)
+
+      // Wait a bit for blockchain confirmation
+      await new Promise(resolve => setTimeout(resolve, 2000))
+
+      // Update database with Payment contract details
       await prisma.winner.update({
         where: { id: winner.id },
         data: {
           paid: true,
-          paidTxHash: distributeTxId  // Use the distributePrizes tx as proof of completion
+          paidTxHash: paymentTxId,
+          paymentContractId: paymentContract._id,
+          paymentContractRev: paymentRev
         }
       })
 
-      // Update student earnings
+      // Update student earnings (optimistically - they still need to claim)
       await prisma.user.update({
         where: { id: winner.attempt.userId },
         data: {
@@ -296,11 +346,12 @@ export async function distributePrizesToWinners(quizId: string, revealedQuizRev?
         }
       })
 
-      // Update attempt with prize
+      // Update attempt with prize and payment info
       await prisma.quizAttempt.update({
         where: { id: winner.attemptId },
         data: {
-          prizeAmount: winner.prizeAmount
+          prizeAmount: winner.prizeAmount,
+          paymentContractRev: paymentRev
         }
       })
 
@@ -312,16 +363,17 @@ export async function distributePrizesToWinners(quizId: string, revealedQuizRev?
         studentAddress: winner.attempt.student.address,
         studentPublicKey: winner.attempt.student.publicKey,
         amount: winner.prizeAmount.toString(),
-        paymentRev: distributeTxId,  // Use distributePrizes tx as payment proof
-        txId: distributeTxId,
+        paymentRev: paymentRev,
+        paymentId: paymentContract._id,
+        txId: paymentTxId,
         status: 'success' as const,
-        canClaim: true  // Winners can now see they won (no separate claim needed)
+        canClaim: true  // Winners can now claim their Payment contract
       })
 
-      console.log(`    ✅ DB updated`)
+      console.log(`    ✅ DB updated - Winner can now claim prize!`)
 
     } catch (error) {
-      console.error(`  ❌ DB update failed for winner ${winner.id}:`, error)
+      console.error(`  ❌ Payment creation failed for winner ${winner.id}:`, error)
 
       paymentResults.push({
         winnerId: winner.id,
@@ -329,11 +381,12 @@ export async function distributePrizesToWinners(quizId: string, revealedQuizRev?
         studentAddress: winner.attempt.student.address || 'N/A',
         studentPublicKey: winner.attempt.student.publicKey || 'N/A',
         amount: winner.prizeAmount.toString(),
-        paymentRev: 'DB_FAILED',
-        txId: 'DB_FAILED',
+        paymentRev: 'FAILED',
+        paymentId: 'FAILED',
+        txId: 'FAILED',
         status: 'failed' as const,
         canClaim: false,
-        error: error instanceof Error ? error.message : 'DB update failed'
+        error: error instanceof Error ? error.message : 'Payment creation failed'
       })
     }
   }
@@ -515,8 +568,9 @@ async function refreshBalances(quizId: string) {
  *
  * @param userId - User claiming the payment
  * @param paymentRev - Payment contract revision
+ * @param moduleSpecifier - Quiz module specifier (needed for encodeCall)
  */
-export async function claimPayment(userId: string, paymentRev: string) {
+export async function claimPayment(userId: string, paymentRev: string, moduleSpecifier: string) {
   console.log(`\n💰 Claiming payment: ${paymentRev}`)
   console.log(`  User: ${userId}`)
 
@@ -546,24 +600,45 @@ export async function claimPayment(userId: string, paymentRev: string) {
       }
     }
 
-    // Claim the payment using encode/broadcast pattern
-    console.log(`  🎯 Calling Payment.claim() via encode/broadcast...`)
+    // Claim using encodeCall pattern (like in test)
+    console.log(`  🎯 Calling Payment.claim() via encodeCall...`)
 
-    await withMempoolRetry(
+    const { tx } = await withMempoolRetry(
       async () => {
-        const { tx } = await computer.encode({
-          exp: `${paymentRev}.claim()`,
-          env: { [paymentRev]: paymentContract }
+        return await computer.encodeCall({
+          target: paymentContract,
+          property: 'claim',
+          args: [],
+          mod: moduleSpecifier
         })
-        await computer.broadcast(tx)
       },
-      'Claim payment',
+      'Encode claim call',
       3,
-      2000
+      2000,
+      computer
     )
+
+    const claimTxId = await withMempoolRetry(
+      async () => {
+        return await computer.broadcast(tx)
+      },
+      'Broadcast claim',
+      3,
+      2000,
+      computer
+    )
+
+    console.log(`  ✅ Claim transaction broadcast: ${claimTxId}`)
 
     // Wait for blockchain confirmation
     await new Promise(resolve => setTimeout(resolve, 3000))
+
+    // Query for latest Payment revision
+    const [latestPaymentRev] = await computer.query({ ids: [paymentContract._id] })
+    const claimedPayment = await computer.sync(latestPaymentRev)
+
+    console.log(`  Payment status after: ${claimedPayment.status}`)
+    console.log(`  Payment satoshis after: ${claimedPayment._satoshis}`)
 
     // Refresh user balance from blockchain
     const newBalance = await getUserBalance(userId)
@@ -575,8 +650,9 @@ export async function claimPayment(userId: string, paymentRev: string) {
       success: true,
       message: 'Payment claimed successfully. Funds released to your wallet.',
       paymentRev,
-      amount: paymentContract.amount.toString(),
-      newBalance: newBalance.toString()
+      amount: claimedPayment.amount.toString(),
+      newBalance: newBalance.toString(),
+      txId: claimTxId
     }
 
   } catch (error) {

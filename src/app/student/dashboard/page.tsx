@@ -128,14 +128,14 @@ export default function StudentDashboard() {
 
       {/* Refund Available Banner */}
       {!loading && !error && data && data.refundableAttempts && data.refundableAttempts.length > 0 && (
-        <div className="mb-6 p-4 bg-gradient-to-r from-purple-500 to-blue-500 rounded-lg text-white">
+        <div className="mb-6 p-4 bg-white border border-gray-300 rounded-lg text-white">
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-2xl">💸</span>
-                <h3 className="text-lg font-bold">Refunds Available</h3>
+                <h3 className="text-lg text-black font-bold">Refunds Available</h3>
               </div>
-              <p className="text-sm text-white/90 mb-3">
+              <p className="text-sm text-black/90 mb-3">
                 You have {data.refundableAttempts.length} quiz attempt(s) eligible for refund due to abandoned quizzes.
                 Total refundable: {formatSatoshis(data.stats.totalRefundable)} sats
               </p>

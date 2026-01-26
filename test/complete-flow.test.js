@@ -207,29 +207,29 @@ const _QuizContractSource_LEGACY = `
         throw new Error('Pass threshold must be between 0 and 100')
       }
 
-      // ✅ SOLUTION A: Calculate distribution deadline (24 hours after reveal deadline)
+      
       const distributionDeadline = teacherRevealDeadline + (24 * 60 * 60 * 1000)
 
       super({
         _owners: [teacher],
-        _satoshis: 546n,  // ✅ SOLUTION A: Only dust, not prize pool!
+        _satoshis: 546n,  
         teacher: teacher,
         questionHashIPFS: questionHashIPFS,
         answerHashes: answerHashes,
         questionCount: answerHashes.length,
         entryFee: entryFee,
-        prizePool: prizePool,  // ✅ SOLUTION A: Store as metadata, not locked funds
+        prizePool: prizePool,  
         passThreshold: passThreshold,
         platformFee: 0.02,
         deadline: deadline,
         teacherRevealDeadline: teacherRevealDeadline,
-        distributionDeadline: distributionDeadline,  // ✅ NEW: Anti-cheat protection
+        distributionDeadline: distributionDeadline,  
         status: 'active',
         revealedAnswers: null,
         salt: null,
         winners: [],
         createdAt: Date.now(),
-        distributedAt: null,  // ✅ NEW: Track when prizes distributed
+        distributedAt: null,  
         version: '1.0.0'
       })
     }
@@ -295,13 +295,13 @@ const _QuizContractSource_LEGACY = `
         teacher: this.teacher,
         questionCount: this.questionCount,
         entryFee: this.entryFee,
-        prizePool: this.prizePool,  // ✅ SOLUTION A: Return metadata, not _satoshis
+        prizePool: this.prizePool,  
         passThreshold: this.passThreshold,
         deadline: this.deadline,
         teacherRevealDeadline: this.teacherRevealDeadline,
-        distributionDeadline: this.distributionDeadline,  // ✅ NEW
+        distributionDeadline: this.distributionDeadline,  
         status: this.status,
-        distributedAt: this.distributedAt  // ✅ NEW
+        distributedAt: this.distributedAt  
       }
     }
   }
@@ -332,7 +332,7 @@ const _QuizAttemptSource_LEGACY = `
         status: 'committed',
         submitTimestamp: Date.now(),
         revealTimestamp: null,
-        refundedAt: null,  // ✅ NEW: Track refund timestamp
+        refundedAt: null,  
         version: '1.0.0'
       })
     }
@@ -398,13 +398,13 @@ const _QuizAttemptSource_LEGACY = `
         throw new Error('Cannot claim refund: quiz is still active or completed normally')
       }
 
-      // ✅ Cash out entry fee to student (Bitcoin Computer cashOut pattern)
+      
       this._satoshis = 546n
       this.status = 'refunded'
       this.refundedAt = Date.now()
     }
 
-    // ✅ NEW: Step 1 - Student transfers ownership to teacher
+    
     // MUST be called by STUDENT (current owner) to authorize the ownership transfer
     transferOwnershipToTeacher(quiz) {
       if (quiz.status !== 'completed') {
@@ -419,7 +419,7 @@ const _QuizAttemptSource_LEGACY = `
       this.status = 'ownership-transferred'
     }
 
-    // ✅ NEW: Step 2 - Teacher claims the entry fee
+    
     // MUST be called by TEACHER (new owner) after ownership transfer
     claimEntryFee() {
       if (this.status !== 'ownership-transferred') {
@@ -439,7 +439,7 @@ const _QuizAttemptSource_LEGACY = `
         status: this.status,
         score: this.score,
         passed: this.passed,
-        refundedAt: this.refundedAt  // ✅ NEW
+        refundedAt: this.refundedAt  
       }
     }
   }

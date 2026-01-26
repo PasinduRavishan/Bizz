@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { ClaimPrizeButton } from './ClaimPrizeButton'
 
 // Gas fee constants (in satoshis)
 const GAS_FEES = {
@@ -297,6 +298,58 @@ export function StudentAttemptDetails({ attemptId, onClose }: StudentAttemptDeta
           </div>
         </CardBody>
       </Card>
+
+      {/* Claim Prize Section - Only show for winners */}
+      {isWinner && data.prizeAmount && (
+        <Card>
+          <CardHeader>
+            <h3 className="font-semibold text-gray-900 dark:text-white">🎁 Claim Your Prize</h3>
+          </CardHeader>
+          <CardBody>
+            <div className="space-y-4">
+              <div className="bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-900/20 dark:to-amber-900/20 p-4 rounded-lg border-2 border-yellow-200 dark:border-yellow-800">
+                <div className="flex items-start gap-3">
+                  <div className="text-3xl">🏆</div>
+                  <div className="flex-1">
+                    <h4 className="font-bold text-gray-900 dark:text-white mb-1">
+                      Congratulations! You won!
+                    </h4>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                      You earned <span className="font-mono font-bold text-green-600">{formatSatoshis(prizeAmount)} sats</span> as a prize.
+                      Click the button below to claim your prize and release the funds to your wallet.
+                    </p>
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>This will call the Payment contract's claim() method to release funds</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <ClaimPrizeButton
+                attemptId={data.id}
+                prizeAmount={data.prizeAmount}
+                onSuccess={() => {
+                  // Reload to show updated status
+                  window.location.reload()
+                }}
+              />
+
+              <div className="text-xs text-gray-500 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded border border-blue-200 dark:border-blue-800">
+                <p className="font-semibold mb-1">💡 How it works:</p>
+                <ul className="space-y-1 ml-4 list-disc">
+                  <li>Your prize is locked in a Payment smart contract on the blockchain</li>
+                  <li>Claiming reduces the contract to dust (546 sats) and releases {formatSatoshis(prizeAmount - 546)} sats to your wallet</li>
+                  <li>Small gas fee (~1,000 sats) will be deducted from the prize</li>
+                  <li>Net amount: ~{formatSatoshis(prizeAmount - 546 - 1000)} sats</li>
+                </ul>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {/* Quiz Info */}
       <Card>
