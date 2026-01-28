@@ -189,13 +189,35 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
 
     console.log(`    ✅ All wallets funded`)
 
-    console.log('\n  📦 Deploying contract modules...')
-    quizModuleSpec = await teacherComputer.deploy(`export ${Quiz}\nexport ${Payment}`)
-    attemptModuleSpec = await teacherComputer.deploy(`export ${QuizAttempt}`)
-    swapModuleSpec = await teacherComputer.deploy(`export ${PrizeSwap}`)
+    // Mine a block after funding to confirm transactions
+    await mineBlockFromRPCClient(teacherComputer)
+    await sleep(2000)
 
+    console.log('\n  📦 Deploying contract modules...')
+
+    quizModuleSpec = await withRetry(
+      () => teacherComputer.deploy(`export ${Quiz}\nexport ${Payment}`),
+      'Deploy Quiz module',
+      teacherComputer
+    )
     console.log(`    ✅ Quiz module deployed`)
+    await mineBlockFromRPCClient(teacherComputer)
+    await sleep(2000)
+
+    attemptModuleSpec = await withRetry(
+      () => teacherComputer.deploy(`export ${QuizAttempt}`),
+      'Deploy QuizAttempt module',
+      teacherComputer
+    )
     console.log(`    ✅ QuizAttempt module deployed`)
+    await mineBlockFromRPCClient(teacherComputer)
+    await sleep(2000)
+
+    swapModuleSpec = await withRetry(
+      () => teacherComputer.deploy(`export ${PrizeSwap}`),
+      'Deploy PrizeSwap module',
+      teacherComputer
+    )
     console.log(`    ✅ PrizeSwap module deployed`)
 
     console.log('\n  📝 Preparing test data...')
@@ -384,7 +406,11 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
       const [latestRev] = await teacherComputer.query({ ids: [quiz._id] })
       quiz = await teacherComputer.sync(latestRev)
 
-      console.log(`    ✅ Answers revealed: ${quiz.revealedAnswers.join(', ')}`)
+      if (quiz.revealedAnswers && Array.isArray(quiz.revealedAnswers)) {
+        console.log(`    ✅ Answers revealed: ${quiz.revealedAnswers.join(', ')}`)
+      } else {
+        console.log(`    ⚠️  Answers revealed but array is: ${quiz.revealedAnswers}`)
+      }
 
       expect(quiz.status).to.equal('revealed')
     })
@@ -502,6 +528,13 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
     it('should create prize Payment for Student 1 (winner)', async function() {
       console.log('\n  💰 Teacher creating Prize Payment for Student 1...')
 
+      // Re-sync quiz to get latest state from Phase 3
+      const [latestQuizRev] = await teacherComputer.query({ ids: [quiz._id] })
+      quiz = await teacherComputer.sync(latestQuizRev)
+
+      console.log(`    Quiz status: ${quiz.status}`)
+      expect(quiz.status).to.equal('revealed')
+
       const { tx: prizeTx, effect: prizeEffect } = await withRetry(
         () => teacherComputer.encode({
           mod: quizModuleSpec,
@@ -528,6 +561,10 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
 
     it('should execute atomic swap for Student 1 (winner pays entry fee, receives prize)', async function() {
       console.log('\n  🎁 Student 1 claiming prize via atomic swap...')
+
+      // Ensure prize payment was created in previous test
+      expect(prizePayment1).to.exist
+      expect(prizePayment1._id).to.be.a('string')
 
       // Student 1 creates entry fee Payment
       console.log('    Step 1: Student 1 creates entry fee Payment...')
