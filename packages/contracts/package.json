@@ -10,28 +10,15 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
-    "./Quiz": {
-      "import": "./dist/Quiz.js",
-      "types": "./dist/Quiz.d.ts"
-    },
-    "./QuizAttempt": {
-      "import": "./dist/QuizAttempt.js",
-      "types": "./dist/QuizAttempt.d.ts"
-    },
-    "./PrizeSwap": {
-      "import": "./dist/PrizeSwap.js",
-      "types": "./dist/PrizeSwap.d.ts"
-    },
-    "./Payment": {
-      "import": "./dist/Payment.js",
-      "types": "./dist/Payment.d.ts"
-    },
+    "./dist/*": "./dist/*",
     "./deploy/*": "./deploy/*"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/build-deploy.js",
+    "build:ts": "tsc",
+    "build:deploy": "node scripts/build-deploy.js",
     "watch": "tsc --watch",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist deploy"
   },
   "dependencies": {
     "@bitcoin-computer/lib": "^0.26.0-beta.0"
