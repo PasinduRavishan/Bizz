@@ -108,7 +108,20 @@ function displayBalanceChange(label, before, after) {
   console.log(`        Change: ${sign}${diff.toLocaleString()} sats`)
 }
 
-async function withRetry(operation, operationName, maxRetries = 5) {
+// Mine a block to resolve mempool conflicts
+async function mineBlockFromRPCClient(computer) {
+  try {
+    const newAddress = await computer.rpcCall('getnewaddress', 'mywallet legacy')
+    console.log(`      ⛏️  Mining block to address ${newAddress.result}`)
+    await computer.rpcCall('generatetoaddress', `1 ${newAddress.result}`)
+    console.log(`      ✅ Block mined to address ${newAddress.result}`)
+    await sleep(2000)
+  } catch (error) {
+    console.log('      ❌ Error generating block', error)
+  }
+}
+
+async function withRetry(operation, operationName, computer, maxRetries = 5) {
   let lastError = null
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -123,9 +136,8 @@ async function withRetry(operation, operationName, maxRetries = 5) {
         if (attempt === maxRetries) {
           throw new Error(`Mempool ancestor limit exceeded: ${error.message}`)
         }
-        const delayMs = 15000 * Math.pow(2, attempt - 1)
-        console.log(`      ⏳ ${operationName}: Too many ancestors, waiting ${delayMs/1000}s... (${attempt}/${maxRetries})`)
-        await sleep(delayMs)
+        console.log(`      ⏳ ${operationName}: Too many ancestors, mining block... (${attempt}/${maxRetries})`)
+        await mineBlockFromRPCClient(computer)
         continue
       }
 
@@ -133,9 +145,8 @@ async function withRetry(operation, operationName, maxRetries = 5) {
         if (attempt === maxRetries) {
           throw error
         }
-        const delayMs = 3000 * Math.pow(2, attempt - 1)
-        console.log(`      ⏳ ${operationName}: Mempool conflict, waiting ${delayMs/1000}s... (${attempt}/${maxRetries})`)
-        await sleep(delayMs)
+        console.log(`      ⏳ ${operationName}: Mempool conflict, mining block... (${attempt}/${maxRetries})`)
+        await mineBlockFromRPCClient(computer)
         continue
       }
 
@@ -253,12 +264,14 @@ describe('🚀 ATOMIC SWAP SMOKE TEST - Deferred Payment Model', function() {
           mod: quizModuleSpec,
           exp: `new Quiz("${teacherPubKey}", "${questionHashIPFS}", ${JSON.stringify(answerHashes)}, BigInt(${prizePool}), BigInt(${entryFee}), ${passThreshold}, ${deadline}, ${teacherRevealDeadline})`
         }),
-        'Encode Quiz creation'
+        'Encode Quiz creation',
+        teacherComputer
       )
 
       await withRetry(
         () => teacherComputer.broadcast(tx),
-        'Broadcast Quiz creation'
+        'Broadcast Quiz creation',
+        teacherComputer
       )
 
       quiz = effect.res
@@ -295,12 +308,14 @@ describe('🚀 ATOMIC SWAP SMOKE TEST - Deferred Payment Model', function() {
           mod: attemptModuleSpec,
           exp: `new QuizAttempt("${studentPubKey}", "${quizId}", "${studentCommitment}", BigInt(${entryFee}), "${teacherPubKey}")`
         }),
-        'Encode student attempt'
+        'Encode student attempt',
+        studentComputer
       )
 
       await withRetry(
         () => studentComputer.broadcast(attemptTx),
-        'Broadcast student attempt'
+        'Broadcast student attempt',
+        studentComputer
       )
 
       attempt1 = attemptEffect.res
@@ -346,12 +361,14 @@ describe('🚀 ATOMIC SWAP SMOKE TEST - Deferred Payment Model', function() {
           args: [correctAnswers, salt],
           mod: quizModuleSpec
         }),
-        'Encode revealAnswers call'
+        'Encode revealAnswers call',
+        teacherComputer
       )
 
       await withRetry(
         () => teacherComputer.broadcast(revealTx),
-        'Broadcast revealAnswers'
+        'Broadcast revealAnswers',
+        teacherComputer
       )
 
       await sleep(3000)
@@ -397,12 +414,14 @@ describe('🚀 ATOMIC SWAP SMOKE TEST - Deferred Payment Model', function() {
           args: [score.percentage, passed],
           mod: attemptModuleSpec
         }),
-        'Encode verify call'
+        'Encode verify call',
+        studentComputer
       )
 
       await withRetry(
         () => studentComputer.broadcast(verifyTx),
-        'Broadcast verify'
+        'Broadcast verify',
+        studentComputer
       )
 
       await sleep(3000)
@@ -429,12 +448,14 @@ describe('🚀 ATOMIC SWAP SMOKE TEST - Deferred Payment Model', function() {
           mod: quizModuleSpec,
           exp: `new Payment("${winner.student}", BigInt(${prizePool}), "Quiz Prize", "${winner.attemptId}")`
         }),
-        'Encode Prize Payment'
+        'Encode Prize Payment',
+        teacherComputer
       )
 
       await withRetry(
         () => teacherComputer.broadcast(prizeTx),
-        'Broadcast Prize Payment'
+        'Broadcast Prize Payment',
+        teacherComputer
       )
 
       prizePayment = prizeEffect.res
@@ -471,12 +492,14 @@ describe('🚀 ATOMIC SWAP SMOKE TEST - Deferred Payment Model', function() {
           mod: quizModuleSpec,
           exp: `new Payment("${teacherPubKey}", BigInt(${entryFee}), "Entry Fee", "${attempt1._id}")`
         }),
-        'Encode Entry Fee Payment'
+        'Encode Entry Fee Payment',
+        studentComputer
       )
 
       await withRetry(
         () => studentComputer.broadcast(entryFeeTx),
-        'Broadcast Entry Fee Payment'
+        'Broadcast Entry Fee Payment',
+        studentComputer
       )
 
       const entryFeePayment = entryFeeEffect.res
@@ -490,7 +513,7 @@ describe('🚀 ATOMIC SWAP SMOKE TEST - Deferred Payment Model', function() {
 
       const { tx: swapTx } = await withRetry(
         () => teacherComputer.encode({
-          exp: `${PrizeSwap} PrizeSwap.exec(prizePayment, entryFeePayment, attempt)`,
+          exp: `${PrizeSwap} PrizeSwap.swap(prizePayment, entryFeePayment, attempt)`,
           env: {
             prizePayment: prizePayment._rev,
             entryFeePayment: entryFeePayment._rev,
@@ -499,7 +522,8 @@ describe('🚀 ATOMIC SWAP SMOKE TEST - Deferred Payment Model', function() {
           mod: swapModuleSpec
           // Let teacher fund and sign by default
         }),
-        'Encode atomic swap'
+        'Encode atomic swap',
+        teacherComputer
       )
 
       console.log(`      ✅ Teacher created and signed swap transaction`)
@@ -509,7 +533,8 @@ describe('🚀 ATOMIC SWAP SMOKE TEST - Deferred Payment Model', function() {
       await studentComputer.sign(swapTx) // Sign student-owned inputs
       const swapResult = await withRetry(
         () => studentComputer.broadcast(swapTx),
-        'Broadcast atomic swap'
+        'Broadcast atomic swap',
+        studentComputer
       )
 
       console.log(`      ✅ Swap transaction broadcast: ${swapResult}`)

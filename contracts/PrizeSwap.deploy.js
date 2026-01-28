@@ -10,7 +10,7 @@ export class PrizeSwap extends Contract {
    * @param {Object} attempt - QuizAttempt contract
    * @returns {Array} [prizePayment, entryFeePayment, attempt] with updated ownership
    */
-  static exec(prizePayment, entryFeePayment, attempt) {
+  static swap(prizePayment, entryFeePayment, attempt) {
     // Get current owners
     const [student] = attempt._owners
     const [entryFeePayer] = entryFeePayment._owners

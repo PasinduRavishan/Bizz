@@ -36,7 +36,7 @@ export class PrizeSwap extends Contract {
    * @param attempt - QuizAttempt contract
    * @returns [prizePayment, entryFeePayment, attempt] with updated ownership
    */
-  static exec(
+  static swap(
     prizePayment: Payment,
     entryFeePayment: Payment,
     attempt: QuizAttempt

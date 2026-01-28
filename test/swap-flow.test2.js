@@ -71,7 +71,20 @@ function displayBalanceChange(label, before, after) {
   console.log(`        Change: ${sign}${diff.toLocaleString()} sats`)
 }
 
-async function withRetry(operation, operationName, maxRetries = 5) {
+// Mine a block to resolve mempool conflicts
+async function mineBlockFromRPCClient(computer) {
+  try {
+    const newAddress = await computer.rpcCall('getnewaddress', 'mywallet legacy')
+    console.log(`      ⛏️  Mining block to address ${newAddress.result}`)
+    await computer.rpcCall('generatetoaddress', `1 ${newAddress.result}`)
+    console.log(`      ✅ Block mined to address ${newAddress.result}`)
+    await sleep(2000)
+  } catch (error) {
+    console.log('      ❌ Error generating block', error)
+  }
+}
+
+async function withRetry(operation, operationName, computer, maxRetries = 5) {
   let lastError = null
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -86,9 +99,8 @@ async function withRetry(operation, operationName, maxRetries = 5) {
         if (attempt === maxRetries) {
           throw new Error(`Mempool ancestor limit exceeded: ${error.message}`)
         }
-        const delayMs = 15000 * Math.pow(2, attempt - 1)
-        console.log(`      ⏳ ${operationName}: Too many ancestors, waiting ${delayMs/1000}s... (${attempt}/${maxRetries})`)
-        await sleep(delayMs)
+        console.log(`      ⏳ ${operationName}: Too many ancestors, mining block... (${attempt}/${maxRetries})`)
+        await mineBlockFromRPCClient(computer)
         continue
       }
 
@@ -96,9 +108,8 @@ async function withRetry(operation, operationName, maxRetries = 5) {
         if (attempt === maxRetries) {
           throw error
         }
-        const delayMs = 3000 * Math.pow(2, attempt - 1)
-        console.log(`      ⏳ ${operationName}: Mempool conflict, waiting ${delayMs/1000}s... (${attempt}/${maxRetries})`)
-        await sleep(delayMs)
+        console.log(`      ⏳ ${operationName}: Mempool conflict, mining block... (${attempt}/${maxRetries})`)
+        await mineBlockFromRPCClient(computer)
         continue
       }
 
@@ -235,12 +246,14 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
           mod: quizModuleSpec,
           exp: `new Quiz("${teacherPubKey}", "${questionHashIPFS}", ${JSON.stringify(answerHashes)}, BigInt(${prizePool}), BigInt(${entryFee}), ${passThreshold}, ${deadline}, ${teacherRevealDeadline})`
         }),
-        'Encode Quiz creation'
+        'Encode Quiz creation',
+        teacherComputer
       )
 
       await withRetry(
         () => teacherComputer.broadcast(tx),
-        'Broadcast Quiz creation'
+        'Broadcast Quiz creation',
+        teacherComputer
       )
 
       quiz = effect.res
@@ -267,12 +280,14 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
           mod: attemptModuleSpec,
           exp: `new QuizAttempt("${student1PubKey}", "${quizId}", "${student1Data.commitment}", BigInt(${entryFee}), "${teacherPubKey}")`
         }),
-        'Encode student 1 attempt'
+        'Encode student 1 attempt',
+        student1Computer
       )
 
       await withRetry(
         () => student1Computer.broadcast(attemptTx),
-        'Broadcast student 1 attempt'
+        'Broadcast student 1 attempt',
+        student1Computer
       )
 
       attempt1 = attemptEffect.res
@@ -292,12 +307,14 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
           mod: attemptModuleSpec,
           exp: `new QuizAttempt("${student2PubKey}", "${quizId}", "${student2Data.commitment}", BigInt(${entryFee}), "${teacherPubKey}")`
         }),
-        'Encode student 2 attempt'
+        'Encode student 2 attempt',
+        student2Computer
       )
 
       await withRetry(
         () => student2Computer.broadcast(attemptTx),
-        'Broadcast student 2 attempt'
+        'Broadcast student 2 attempt',
+        student2Computer
       )
 
       attempt2 = attemptEffect.res
@@ -317,12 +334,14 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
           mod: attemptModuleSpec,
           exp: `new QuizAttempt("${student3PubKey}", "${quizId}", "${student3Data.commitment}", BigInt(${entryFee}), "${teacherPubKey}")`
         }),
-        'Encode student 3 attempt'
+        'Encode student 3 attempt',
+        student3Computer
       )
 
       await withRetry(
         () => student3Computer.broadcast(attemptTx),
-        'Broadcast student 3 attempt'
+        'Broadcast student 3 attempt',
+        student3Computer
       )
 
       attempt3 = attemptEffect.res
@@ -350,12 +369,14 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
           args: [correctAnswers, salt],
           mod: quizModuleSpec
         }),
-        'Encode revealAnswers call'
+        'Encode revealAnswers call',
+        teacherComputer
       )
 
       await withRetry(
         () => teacherComputer.broadcast(revealTx),
-        'Broadcast revealAnswers'
+        'Broadcast revealAnswers',
+        teacherComputer
       )
 
       await sleep(3000)
@@ -386,12 +407,14 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
           args: [score.percentage, passed],
           mod: attemptModuleSpec
         }),
-        'Encode verify call'
+        'Encode verify call',
+        student1Computer
       )
 
       await withRetry(
         () => student1Computer.broadcast(verifyTx),
-        'Broadcast verify'
+        'Broadcast verify',
+        student1Computer
       )
 
       await sleep(3000)
@@ -420,12 +443,14 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
           args: [score.percentage, passed],
           mod: attemptModuleSpec
         }),
-        'Encode verify call'
+        'Encode verify call',
+        student2Computer
       )
 
       await withRetry(
         () => student2Computer.broadcast(verifyTx),
-        'Broadcast verify'
+        'Broadcast verify',
+        student2Computer
       )
 
       await sleep(3000)
@@ -454,12 +479,14 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
           args: [score.percentage, passed],
           mod: attemptModuleSpec
         }),
-        'Encode verify call'
+        'Encode verify call',
+        student3Computer
       )
 
       await withRetry(
         () => student3Computer.broadcast(verifyTx),
-        'Broadcast verify'
+        'Broadcast verify',
+        student3Computer
       )
 
       await sleep(3000)
@@ -480,12 +507,14 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
           mod: quizModuleSpec,
           exp: `new Payment("${student1PubKey}", BigInt(${prizePool}), "Quiz Prize", "${attempt1._id}")`
         }),
-        'Encode Prize Payment'
+        'Encode Prize Payment',
+        teacherComputer
       )
 
       await withRetry(
         () => teacherComputer.broadcast(prizeTx),
-        'Broadcast Prize Payment'
+        'Broadcast Prize Payment',
+        teacherComputer
       )
 
       prizePayment1 = prizeEffect.res
@@ -507,12 +536,14 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
           mod: quizModuleSpec,
           exp: `new Payment("${teacherPubKey}", BigInt(${entryFee}), "Entry Fee", "${attempt1._id}")`
         }),
-        'Encode Entry Fee Payment'
+        'Encode Entry Fee Payment',
+        student1Computer
       )
 
       await withRetry(
         () => student1Computer.broadcast(entryFeeTx),
-        'Broadcast Entry Fee Payment'
+        'Broadcast Entry Fee Payment',
+        student1Computer
       )
 
       const entryFeePayment1 = entryFeeEffect.res
@@ -524,7 +555,7 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
       console.log('    Step 2: Teacher creating swap transaction...')
       const { tx: swapTx } = await withRetry(
         () => teacherComputer.encode({
-          exp: `${PrizeSwap} PrizeSwap.exec(prizePayment, entryFeePayment, attempt)`,
+          exp: `${PrizeSwap} PrizeSwap.swap(prizePayment, entryFeePayment, attempt)`,
           env: {
             prizePayment: prizePayment1._rev,
             entryFeePayment: entryFeePayment1._rev,
@@ -532,7 +563,8 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
           },
           mod: swapModuleSpec
         }),
-        'Encode atomic swap'
+        'Encode atomic swap',
+        teacherComputer
       )
 
       // Student signs and broadcasts
@@ -540,7 +572,8 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
       await student1Computer.sign(swapTx)
       await withRetry(
         () => student1Computer.broadcast(swapTx),
-        'Broadcast atomic swap'
+        'Broadcast atomic swap',
+        student1Computer
       )
 
       await sleep(3000)
@@ -571,12 +604,14 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
           mod: quizModuleSpec,
           exp: `new Payment("${teacherPubKey}", BigInt(${entryFee}), "Entry Fee - Failed Attempt", "${attempt2._id}")`
         }),
-        'Encode Entry Fee Payment'
+        'Encode Entry Fee Payment',
+        student2Computer
       )
 
       await withRetry(
         () => student2Computer.broadcast(entryFeeTx),
-        'Broadcast Entry Fee Payment'
+        'Broadcast Entry Fee Payment',
+        student2Computer
       )
 
       const entryFeePayment2 = entryFeeEffect.res
@@ -596,12 +631,14 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
           args: [teacherPubKey],
           mod: quizModuleSpec
         }),
-        'Encode transfer call'
+        'Encode transfer call',
+        student2Computer
       )
 
       await withRetry(
         () => student2Computer.broadcast(transferTx),
-        'Broadcast transfer'
+        'Broadcast transfer',
+        student2Computer
       )
 
       await sleep(3000)
@@ -626,12 +663,14 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
           mod: quizModuleSpec,
           exp: `new Payment("${teacherPubKey}", BigInt(${entryFee}), "Entry Fee - Failed Attempt", "${attempt3._id}")`
         }),
-        'Encode Entry Fee Payment'
+        'Encode Entry Fee Payment',
+        student3Computer
       )
 
       await withRetry(
         () => student3Computer.broadcast(entryFeeTx),
-        'Broadcast Entry Fee Payment'
+        'Broadcast Entry Fee Payment',
+        student3Computer
       )
 
       const entryFeePayment3 = entryFeeEffect.res
@@ -650,12 +689,14 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
           args: [teacherPubKey],
           mod: quizModuleSpec
         }),
-        'Encode transfer call'
+        'Encode transfer call',
+        student3Computer
       )
 
       await withRetry(
         () => student3Computer.broadcast(transferTx),
-        'Broadcast transfer'
+        'Broadcast transfer',
+        student3Computer
       )
 
       await sleep(3000)
