@@ -2,24 +2,7 @@
 // Auto-generated from TypeScript source - DO NOT EDIT MANUALLY
 // Edit the TypeScript file in src/Quiz.ts instead
 
-// TypeScript version for local development (not used for deployment)
-// Bitcoin Computer requires JavaScript without imports
-// For deployment, use the JS version or strip types
-// @ts-expect-error - Bitcoin Computer library type definitions issue
 export class Payment extends Contract {
-    // Contract base properties
-    _id;
-    _rev;
-    _owners;
-    _satoshis;
-    // Payment properties
-    recipient;
-    amount;
-    purpose;
-    reference;
-    status;
-    createdAt;
-    claimedAt;
     constructor(recipient, amount, purpose, reference) {
         if (!recipient)
             throw new Error('Recipient required');
@@ -28,8 +11,6 @@ export class Payment extends Contract {
         if (!purpose)
             throw new Error('Purpose required');
         super({
-            // DON'T set _owners here - let Bitcoin Computer set it to the creator
-            // This allows atomic swaps where creator != recipient
             _satoshis: amount,
             recipient,
             amount,
@@ -66,30 +47,6 @@ export class Payment extends Contract {
     }
 }
 export class Quiz extends Contract {
-    // Contract base properties
-    _id;
-    _rev;
-    _owners;
-    _satoshis;
-    // Quiz properties
-    teacher;
-    questionHashIPFS;
-    answerHashes;
-    questionCount;
-    entryFee;
-    prizePool;
-    passThreshold;
-    platformFee;
-    deadline;
-    teacherRevealDeadline;
-    distributionDeadline;
-    distributedAt;
-    status;
-    revealedAnswers;
-    salt;
-    winners;
-    createdAt;
-    version;
     constructor(teacher, questionHashIPFS, answerHashes, prizePool, entryFee, passThreshold, deadline, teacherRevealDeadline = null) {
         if (!teacher)
             throw new Error('Teacher public key required');
@@ -107,10 +64,6 @@ export class Quiz extends Contract {
         if (passThreshold < 0 || passThreshold > 100) {
             throw new Error('Pass threshold must be between 0 and 100');
         }
-        // Note: Don't validate deadline against Date.now() in constructor
-        // because when syncing old contracts, the deadline will be in the past
-        // Validation happens in methods that use the deadline
-        // If not provided, default to 48 hours after deadline
         const TEACHER_REVEAL_WINDOW = 48 * 3600 * 1000;
         const finalTeacherRevealDeadline = teacherRevealDeadline || (deadline + TEACHER_REVEAL_WINDOW);
         super({
@@ -161,14 +114,6 @@ export class Quiz extends Contract {
         if (this.status !== 'active') {
             throw new Error('Quiz is not in active status');
         }
-        // Note: Deadline checks commented out to avoid issues during blockchain replay
-        // In production, these should be enforced at the application layer before calling
-        // if (Date.now() < this.deadline) {
-        //   throw new Error('Quiz is still active')
-        // }
-        // if (Date.now() > this.teacherRevealDeadline) {
-        //   throw new Error('Teacher reveal deadline has passed')
-        // }
         if (answers.length !== this.answerHashes.length) {
             throw new Error('Answer count does not match');
         }
@@ -184,18 +129,10 @@ export class Quiz extends Contract {
         if (!this._owners.includes(this.teacher)) {
             throw new Error('Only teacher can distribute prizes');
         }
-        // Note: Distribution deadline check removed to avoid replay issues
-        // if (Date.now() > this.distributionDeadline) {
-        //   throw new Error('Distribution deadline passed')
-        // }
         if (!Array.isArray(winners) || winners.length === 0) {
             this.status = 'completed';
             this.distributedAt = Date.now();
-            return;
         }
-        // DEFERRED PAYMENT MODEL:
-        // Store winner metadata only - Payment contracts created separately
-        // Prize pool stays as metadata, not locked in UTXO
         this.winners = winners;
         this.status = 'completed';
         this.distributedAt = Date.now();
@@ -226,13 +163,10 @@ export class Quiz extends Contract {
         const now = Date.now();
         if (this.status === 'active' && now > this.teacherRevealDeadline) {
             this.status = 'abandoned';
-            return;
         }
         if (this.status === 'revealed' && now > this.distributionDeadline) {
             this.status = 'abandoned';
-            return;
         }
         throw new Error('Cannot mark as abandoned yet');
     }
 }
-//# sourceMappingURL=Quiz.js.map

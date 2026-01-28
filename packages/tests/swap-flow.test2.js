@@ -17,9 +17,9 @@ import { expect } from 'chai'
 import { Computer } from '@bitcoin-computer/lib'
 import crypto from 'crypto'
 import dotenv from 'dotenv'
-import { Quiz, Payment } from '@bizz/contracts/dist/Quiz.js'
-import { QuizAttempt } from '@bizz/contracts/dist/QuizAttempt.js'
-import { PrizeSwap } from '@bizz/contracts/dist/PrizeSwap.js'
+import { Quiz, Payment } from '@bizz/contracts/deploy/Quiz.deploy.js'
+import { QuizAttempt } from '@bizz/contracts/deploy/QuizAttempt.deploy.js'
+import { PrizeSwap } from '@bizz/contracts/deploy/PrizeSwap.deploy.js'
 
 dotenv.config({ path: '.env.local' })
 

@@ -2,30 +2,7 @@
 // Auto-generated from TypeScript source - DO NOT EDIT MANUALLY
 // Edit the TypeScript file in src/QuizAttempt.ts instead
 
-// TypeScript version for local development (not used for deployment)
-// Bitcoin Computer requires JavaScript without imports
-// For deployment, use the JS version or strip types
-// @ts-expect-error - Bitcoin Computer library type definitions issue
 export class QuizAttempt extends Contract {
-    // Contract base properties
-    _id;
-    _rev;
-    _owners;
-    _satoshis;
-    // QuizAttempt properties
-    student;
-    quizRef;
-    answerCommitment;
-    quizTeacher;
-    revealedAnswers;
-    nonce;
-    score;
-    passed;
-    status;
-    submitTimestamp;
-    revealTimestamp;
-    claimedAt;
-    version;
     constructor(student, quizRef, answerCommitment, entryFee, quizTeacher) {
         if (!student)
             throw new Error('Student public key required');
@@ -73,7 +50,6 @@ export class QuizAttempt extends Contract {
         this.revealTimestamp = Date.now();
     }
     verify(score, passed) {
-        // Allow verification from either 'committed' (auto-grading) or 'revealed' (manual reveal)
         if (this.status !== 'committed' && this.status !== 'revealed') {
             throw new Error('Attempt must be committed or revealed before verification');
         }
@@ -86,40 +62,29 @@ export class QuizAttempt extends Contract {
         this.passed = false;
     }
     transferOwnershipToTeacher(quiz) {
-        // Step 1: Student transfers ownership to teacher
-        // MUST be called by STUDENT (current owner) to authorize the ownership transfer
         if (quiz.status !== 'completed') {
             throw new Error('Cannot transfer ownership: quiz not completed');
         }
         if (this.status === 'ownership-transferred' || this.status === 'forfeited') {
             throw new Error('Ownership already transferred');
         }
-        // Transfer ownership to teacher (creates new UTXO with teacher as owner)
         this._owners = [this.quizTeacher];
         this.status = 'ownership-transferred';
     }
     claimEntryFee() {
-        // Step 2: Teacher claims the entry fee
-        // MUST be called by TEACHER (new owner) after ownership transfer
         if (this.status !== 'ownership-transferred') {
             throw new Error('Ownership must be transferred first');
         }
-        // Reduce to dust - funds go to caller (teacher)
         this._satoshis = BigInt(546);
         this.status = 'forfeited';
     }
-    // Mark attempt as fee collected
-    // Entry fee is stored as metadata (like Quiz.prizePool), not locked in UTXO
-    // Payment contracts must be created separately by the teacher
     collectFee() {
-        // Can collect from committed, verified, or failed status
         if (!['committed', 'verified', 'failed'].includes(this.status)) {
             throw new Error('Cannot collect fee from this status');
         }
         if (this.status === 'fee_collected') {
             throw new Error('Fee already collected');
         }
-        // Mark as collected (satoshis already at dust level)
         this.status = 'fee_collected';
     }
     claimPrize() {
@@ -133,10 +98,6 @@ export class QuizAttempt extends Contract {
         this.claimedAt = Date.now();
     }
     claimRefund(quiz) {
-        // Student can claim refund if:
-        // 1. Quiz is abandoned (teacher never revealed or never distributed)
-        // 2. They haven't claimed refund yet
-        // 3. Caller is the student who owns this attempt
         if (quiz.status !== 'abandoned') {
             throw new Error('Cannot claim refund: quiz not abandoned');
         }
@@ -146,8 +107,6 @@ export class QuizAttempt extends Contract {
         if (!this._owners.includes(this.student)) {
             throw new Error('Only the student can claim refund');
         }
-        // Mark as refunded and reduce to dust
-        // The actual refund amount is withdrawn by the student wallet
         this.status = 'refunded';
         this._satoshis = BigInt(546); // Reduce to dust, rest goes to student
     }
@@ -166,4 +125,3 @@ export class QuizAttempt extends Contract {
         };
     }
 }
-//# sourceMappingURL=QuizAttempt.js.map

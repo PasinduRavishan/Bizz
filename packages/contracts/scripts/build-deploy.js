@@ -3,8 +3,11 @@
  * Build script to generate .deploy.js files from TypeScript sources
  *
  * Bitcoin Computer requires pure JavaScript files without imports for deployment.
- * This script compiles TypeScript and removes import statements to create
- * deployment-ready files in the deploy/ folder.
+ * This script compiles TypeScript and removes:
+ * 1. Import statements
+ * 2. Property declarations (TypeScript compiled output)
+ * 3. Comments and source map references
+ * to create deployment-ready files in the deploy/ folder.
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
@@ -32,8 +35,30 @@ contracts.forEach(contractName => {
     let content = readFileSync(distPath, 'utf-8');
 
     // Remove all import statements
-    // This regex removes lines that start with 'import' (with optional whitespace before)
     content = content.replace(/^\s*import\s+.*?from\s+['"].*?['"];?\s*$/gm, '');
+
+    // Remove source map comments
+    content = content.replace(/^\/\/# sourceMappingURL=.*$/gm, '');
+
+    // Remove @ts-expect-error comments
+    content = content.replace(/^\s*\/\/\s*@ts-expect-error.*$/gm, '');
+
+    // Remove TypeScript version comments
+    content = content.replace(/^\s*\/\/\s*TypeScript version.*$/gm, '');
+    content = content.replace(/^\s*\/\/\s*Bitcoin Computer requires.*$/gm, '');
+    content = content.replace(/^\s*\/\/\s*For deployment.*$/gm, '');
+
+    // CRITICAL: Remove property declarations inside classes
+    // These are lines like: "    _id;" or "    teacher;" (with indentation)
+    // But NOT lines like: "this._id = ..." (assignments)
+    // Pattern: whitespace + identifier + semicolon + end of line
+    content = content.replace(/^(\s+)([a-zA-Z_$][a-zA-Z0-9_$]*);$/gm, '');
+
+    // Remove comment lines (but keep comments inside code)
+    content = content.replace(/^\s*\/\/.*$/gm, '');
+
+    // Remove multiple consecutive empty lines
+    content = content.replace(/\n\n+/g, '\n\n');
 
     // Remove empty lines at the beginning
     content = content.replace(/^\s*\n/gm, '');
