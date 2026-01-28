@@ -153,24 +153,28 @@ model QuizAttempt {
   score            Int?              // 0-100
   passed           Boolean?
   prizeAmount      BigInt?           // If winner
-  
+
+  // Payment contract (for winners - Bitcoin Computer)
+  paymentContractRev String?         // Payment._rev for claiming prize
+
   // State
   status           AttemptStatus @default(COMMITTED)
-  
+
   // Timestamps
   submitTimestamp  DateTime
   revealTimestamp  DateTime?
-  
+
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
-  
+
   // Relations
   winner           Winner?
-  
+
   @@index([userId])
   @@index([quizId])
   @@index([status])
   @@index([contractId])
+  @@index([paymentContractRev])
 }
 
 enum AttemptStatus {
@@ -184,20 +188,26 @@ enum AttemptStatus {
 // Winner model - tracks quiz winners
 model Winner {
   id          String   @id @default(cuid())
-  
+
   quizId      String
   quiz        Quiz     @relation(fields: [quizId], references: [id])
-  
+
   attemptId   String   @unique
   attempt     QuizAttempt @relation(fields: [attemptId], references: [id])
-  
+
   score       Int
   prizeAmount BigInt
   paid        Boolean  @default(false)
   paidTxHash  String?
-  
+
+  // Payment contract details (Bitcoin Computer)
+  paymentContractId  String?  // Payment._id
+  paymentContractRev String?  // Payment._rev for claiming
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([paymentContractId])
   
   @@index([quizId])
   @@index([paid])

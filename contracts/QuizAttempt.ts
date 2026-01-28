@@ -1,7 +1,6 @@
 // TypeScript version for local development (not used for deployment)
 // Bitcoin Computer requires JavaScript without imports
 // For deployment, use the JS version or strip types
-
 // @ts-expect-error - Bitcoin Computer library type definitions issue
 import { Contract } from '@bitcoin-computer/lib'
 
@@ -24,6 +23,7 @@ export class QuizAttempt extends Contract {
   status!: string
   submitTimestamp!: number
   revealTimestamp!: number | null
+  claimedAt!: number | null
   version!: string
 
   constructor(student: string, quizRef: string, answerCommitment: string, entryFee: bigint, quizTeacher: string) {
@@ -36,12 +36,13 @@ export class QuizAttempt extends Contract {
     if (!quizTeacher) throw new Error('Quiz teacher public key required')
 
     super({
-      _owners: [student], // Student owns initially, teacher gets ownership during collection
-      _satoshis: entryFee,
+      _owners: [student],
+      _satoshis: BigInt(546),
       student,
       quizRef,
       answerCommitment,
-      quizTeacher, // Store teacher public key for later collection
+      entryFee, // Stored as metadata only
+      quizTeacher,
       revealedAnswers: null,
       nonce: null,
       score: null,
@@ -49,6 +50,7 @@ export class QuizAttempt extends Contract {
       status: 'committed',
       submitTimestamp: Date.now(),
       revealTimestamp: null,
+      claimedAt: null,
       version: '1.0.0'
     })
   }
@@ -71,8 +73,9 @@ export class QuizAttempt extends Contract {
   }
 
   verify(score: number, passed: boolean): void {
-    if (this.status !== 'revealed') {
-      throw new Error('Must reveal answers first')
+    // Allow verification from either 'committed' (auto-grading) or 'revealed' (manual reveal)
+    if (this.status !== 'committed' && this.status !== 'revealed') {
+      throw new Error('Attempt must be committed or revealed before verification')
     }
 
     this.score = score
@@ -110,6 +113,33 @@ export class QuizAttempt extends Contract {
     // Reduce to dust - funds go to caller (teacher)
     this._satoshis = BigInt(546)
     this.status = 'forfeited'
+  }
+
+  // Mark attempt as fee collected
+  // Entry fee is stored as metadata (like Quiz.prizePool), not locked in UTXO
+  // Payment contracts must be created separately by the teacher
+  collectFee(): void {
+    // Can collect from committed, verified, or failed status
+    if (!['committed', 'verified', 'failed'].includes(this.status)) {
+      throw new Error('Cannot collect fee from this status')
+    }
+    if (this.status === 'fee_collected') {
+      throw new Error('Fee already collected')
+    }
+
+    // Mark as collected (satoshis already at dust level)
+    this.status = 'fee_collected'
+  }
+
+  claimPrize(): void {
+    if (this.status !== 'verified') {
+      throw new Error('Attempt must be verified before claiming prize')
+    }
+    if (!this.passed) {
+      throw new Error('Only passing attempts can claim prizes')
+    }
+    this.status = 'prize_claimed'
+    this.claimedAt = Date.now()
   }
 
   claimRefund(quiz: { status: string }): void {

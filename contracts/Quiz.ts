@@ -1,7 +1,6 @@
 // TypeScript version for local development (not used for deployment)
 // Bitcoin Computer requires JavaScript without imports
 // For deployment, use the JS version or strip types
-
 // @ts-expect-error - Bitcoin Computer library type definitions issue
 import { Contract } from '@bitcoin-computer/lib'
 
@@ -27,7 +26,8 @@ export class Payment extends Contract {
     if (!purpose) throw new Error('Purpose required')
 
     super({
-      _owners: [recipient],
+      // DON'T set _owners here - let Bitcoin Computer set it to the creator
+      // This allows atomic swaps where creator != recipient
       _satoshis: amount,
       recipient,
       amount,
@@ -37,6 +37,10 @@ export class Payment extends Contract {
       createdAt: Date.now(),
       claimedAt: null
     })
+  }
+
+  transfer(to: string): void {
+    this._owners = [to]
   }
 
   claim(): void {
@@ -194,7 +198,7 @@ export class Quiz extends Contract {
     this.distributionDeadline = Date.now() + (24 * 60 * 60 * 1000)
   }
 
-  distributePrizes(winners: Array<{ student: string }> = []): string[] {
+  distributePrizes(winners: Array<{ student: string; prizeAmount: string; paymentRev: string }> = []): void {
     if (this.status !== 'revealed') {
       throw new Error('Quiz must be revealed first')
     }
@@ -208,33 +212,15 @@ export class Quiz extends Contract {
     if (!Array.isArray(winners) || winners.length === 0) {
       this.status = 'completed'
       this.distributedAt = Date.now()
-      return []
+      return
     }
 
-    const payments: string[] = []
-    let totalDistributed = BigInt(0)
-    const prizePerWinner = this.prizePool / BigInt(winners.length)
-
-    for (const winner of winners) {
-      const payment = new Payment(
-        winner.student,
-        prizePerWinner,
-        `Quiz Prize - ${this.questionHashIPFS}`,
-        this._id
-      )
-      payments.push(payment._rev)
-      totalDistributed += prizePerWinner
-    }
-
-    this.winners = winners.map((w, i) => ({
-      ...w,
-      prizeAmount: prizePerWinner.toString(),
-      paymentRev: payments[i]
-    }))
+    // DEFERRED PAYMENT MODEL:
+    // Store winner metadata only - Payment contracts created separately
+    // Prize pool stays as metadata, not locked in UTXO
+    this.winners = winners
     this.status = 'completed'
     this.distributedAt = Date.now()
-
-    return payments
   }
 
   markDistributionComplete(): void {

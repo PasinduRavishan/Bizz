@@ -551,10 +551,11 @@ describe('🎓 BITCOIN COMPUTER QUIZ PLATFORM - COMPLETE FLOW TESTS', function()
 
     await sleep(2000)
 
-    // Deploy QuizAttempt module using template literal pattern
+    // Deploy QuizAttempt module using template literal pattern (same as Quiz)
+    // IMPORTANT: Include Payment class so collectFee() can return metadata for Payment creation
     attemptModuleSpec = await withRetry(
-      () => teacherComputer.deploy(`export ${QuizAttempt}`),
-      'Deploy QuizAttempt module'
+      () => teacherComputer.deploy(`export ${Payment}\nexport ${QuizAttempt}`),
+      'Deploy QuizAttempt module (with Payment)'
     )
     console.log(`    ✅ QuizAttempt module deployed: ${attemptModuleSpec.substring(0, 30)}...`)
 
@@ -757,7 +758,8 @@ describe('🎓 BITCOIN COMPUTER QUIZ PLATFORM - COMPLETE FLOW TESTS', function()
 
       expect(attempt1._id).to.be.a('string')
       expect(attempt1.status).to.equal('committed')
-      expect(attempt1._satoshis).to.equal(entryFee)
+      expect(attempt1._satoshis).to.equal(546n) // Dust only in UTXO
+      expect(attempt1.entryFee).to.equal(entryFee) // Entry fee stored as metadata
       expect(student1BalanceAfter).to.be.lessThan(student1BalanceBefore)
     })
 
@@ -854,16 +856,21 @@ describe('🎓 BITCOIN COMPUTER QUIZ PLATFORM - COMPLETE FLOW TESTS', function()
       const synced2 = await student2Computer.sync(attempt2._rev)
       const synced3 = await student3Computer.sync(attempt3._rev)
 
-      console.log(`    ✅ Attempt 1 locked: ${synced1._satoshis.toLocaleString()} sats`)
-      console.log(`    ✅ Attempt 2 locked: ${synced2._satoshis.toLocaleString()} sats`)
-      console.log(`    ✅ Attempt 3 locked: ${synced3._satoshis.toLocaleString()} sats`)
+      console.log(`    ✅ Attempt 1 - UTXO: ${synced1._satoshis.toLocaleString()} sats, Entry fee (metadata): ${synced1.entryFee.toLocaleString()} sats`)
+      console.log(`    ✅ Attempt 2 - UTXO: ${synced2._satoshis.toLocaleString()} sats, Entry fee (metadata): ${synced2.entryFee.toLocaleString()} sats`)
+      console.log(`    ✅ Attempt 3 - UTXO: ${synced3._satoshis.toLocaleString()} sats, Entry fee (metadata): ${synced3.entryFee.toLocaleString()} sats`)
 
-      const totalLocked = synced1._satoshis + synced2._satoshis + synced3._satoshis
-      console.log(`    ✅ Total entry fees locked: ${totalLocked.toLocaleString()} sats`)
+      const totalUTXO = synced1._satoshis + synced2._satoshis + synced3._satoshis
+      const totalEntryFees = synced1.entryFee + synced2.entryFee + synced3.entryFee
+      console.log(`    ✅ Total UTXO locked (dust): ${totalUTXO.toLocaleString()} sats`)
+      console.log(`    ✅ Total entry fees (metadata): ${totalEntryFees.toLocaleString()} sats`)
 
-      expect(synced1._satoshis).to.equal(entryFee)
-      expect(synced2._satoshis).to.equal(entryFee)
-      expect(synced3._satoshis).to.equal(entryFee)
+      expect(synced1._satoshis).to.equal(546n) // Dust only in UTXO
+      expect(synced2._satoshis).to.equal(546n)
+      expect(synced3._satoshis).to.equal(546n)
+      expect(synced1.entryFee).to.equal(entryFee) // Entry fee in metadata
+      expect(synced2.entryFee).to.equal(entryFee)
+      expect(synced3.entryFee).to.equal(entryFee)
     })
   })
 
@@ -1263,7 +1270,7 @@ describe('🎓 BITCOIN COMPUTER QUIZ PLATFORM - COMPLETE FLOW TESTS', function()
   describe('💵 Phase 6: Teacher Collects Entry Fees', function() {
 
     it('should allow teacher to collect entry fees from all attempts', async function() {
-      console.log('\n  💵 Teacher collecting entry fees...')
+      console.log('\n  💵 Teacher collecting entry fees using Payment contract pattern...')
 
       const teacherBalanceBefore = (await teacherComputer.getBalance()).balance
       console.log(`    Teacher balance before: ${teacherBalanceBefore.toLocaleString()} sats`)
@@ -1273,78 +1280,128 @@ describe('🎓 BITCOIN COMPUTER QUIZ PLATFORM - COMPLETE FLOW TESTS', function()
       const completedQuiz = await teacherComputer.sync(latestQuizRev)
 
       console.log(`    Quiz status: ${completedQuiz.status}`)
-      console.log(`    Collecting from 3 attempts...`)
+      console.log(`    Collecting from 3 attempts using collectFee()...`)
 
       // Collect entry fees from each student attempt
-      // Map attempts to their student computers
       const attemptData = [
-        { attempt: attempt1, computer: student1Computer, num: 1 },
-        { attempt: attempt2, computer: student2Computer, num: 2 },
-        { attempt: attempt3, computer: student3Computer, num: 3 }
+        { attempt: attempt1, num: 1 },
+        { attempt: attempt2, num: 2 },
+        { attempt: attempt3, num: 3 }
       ]
+      const paymentRevs = []
       let totalCollected = 0n
 
-      for (const { attempt, computer, num } of attemptData) {
-        console.log(`    \n    Student ${num} - Step 1: Transfer ownership`)
+      // Step 1: Call collectFee() on each attempt to reduce to dust and get metadata
+      const feeMetadata = []
+      for (const { attempt, num } of attemptData) {
+        console.log(`\n    Student ${num} - Collecting entry fee`)
 
-        // Sync to get latest revision using student's computer
-        let [latestAttemptRev] = await computer.query({ ids: [attempt._id] })
-        let attemptContract = await computer.sync(latestAttemptRev)
+        // Sync to get latest revision
+        const [latestAttemptRev] = await teacherComputer.query({ ids: [attempt._id] })
+        const attemptContract = await teacherComputer.sync(latestAttemptRev)
 
         console.log(`      Status: ${attemptContract.status}`)
-        console.log(`      Entry fee: ${attemptContract._satoshis.toLocaleString()} sats`)
+        console.log(`      Entry fee (metadata): ${attemptContract.entryFee.toLocaleString()} sats`)
+        console.log(`      Satoshis (UTXO): ${attemptContract._satoshis.toLocaleString()} sats`)
 
-        // Step 1: Student transfers ownership to teacher
-        const { tx: transferTx } = await withRetry(
-          () => computer.encodeCall({
-            target: attemptContract,
-            property: 'transferOwnershipToTeacher',
-            args: [completedQuiz],
-            mod: attemptModuleSpec
-          }),
-          `Student ${num} transfers ownership`
-        )
+        // Get entry fee from metadata (like Quiz.prizePool pattern)
+        const entryFee = attemptContract.entryFee
+        const platformFeePercent = 0.02
+        const platformFeeAmount = BigInt(Math.floor(Number(entryFee) * platformFeePercent))
+        const teacherAmount = entryFee - platformFeeAmount
 
-        await withRetry(
-          () => computer.broadcast(transferTx),
-          `Student ${num} broadcasts ownership transfer`
-        )
-
-        console.log(`      ✅ Ownership transferred to teacher`)
-        await sleep(2000)
-
-        // Step 2: Teacher claims the entry fee
-        console.log(`    Student ${num} - Step 2: Teacher claims entry fee`)
-
-        // Sync again to get updated contract with new ownership
-        ;[latestAttemptRev] = await teacherComputer.query({ ids: [attempt._id] })
-        attemptContract = await teacherComputer.sync(latestAttemptRev)
-
-        const { tx: claimTx } = await withRetry(
+        // Call collectFee() to mark as collected and reduce to dust
+        const { tx: collectTx } = await withRetry(
           () => teacherComputer.encodeCall({
             target: attemptContract,
-            property: 'claimEntryFee',
-            args: [],
+            property: 'collectFee',
+            args: [],  // No arguments needed
             mod: attemptModuleSpec
           }),
-          `Teacher claims entry fee from Student ${num}`
+          `Teacher calls collectFee for Student ${num}`
         )
 
         await withRetry(
-          () => teacherComputer.broadcast(claimTx),
-          `Teacher broadcasts claim for Student ${num}`
+          () => teacherComputer.broadcast(collectTx),
+          `Teacher broadcasts collectFee for Student ${num}`
         )
 
-        console.log(`      ✅ Entry fee claimed by teacher`)
+        console.log(`      ✅ Attempt marked as fee_collected`)
+        console.log(`      ✅ Teacher amount: ${teacherAmount.toLocaleString()} sats`)
+        console.log(`      ✅ Platform fee: ${platformFeeAmount.toLocaleString()} sats`)
 
-        // Calculate collected amount (entry fee minus dust)
-        const collected = attemptContract._satoshis - 546n
-        totalCollected += collected
+        const metadata = {
+          teacher: attemptContract.quizTeacher,
+          teacherAmount: teacherAmount.toString(),
+          platformFeeAmount: platformFeeAmount.toString(),
+          purpose: `Entry Fee - ${attemptContract._id}`,
+          reference: attemptContract.quizRef
+        }
+
+        feeMetadata.push(metadata)
+        totalCollected += teacherAmount
 
         await sleep(2000)
       }
 
-      console.log(`\n    Total entry fees collected: ${totalCollected.toLocaleString()} sats`)
+      console.log(`\n    📝 Total entry fees to collect: ${totalCollected.toLocaleString()} sats`)
+
+      // Step 2: Create Payment contracts for teacher (separate transactions)
+      console.log(`\n    💰 Creating Payment contracts for collected fees...`)
+
+      for (let i = 0; i < feeMetadata.length; i++) {
+        const metadata = feeMetadata[i]
+        console.log(`\n    Creating Payment ${i + 1}...`)
+
+        const { tx: paymentTx, effect: paymentEffect } = await withRetry(
+          () => teacherComputer.encode({
+            mod: attemptModuleSpec,
+            exp: `new Payment("${metadata.teacher}", BigInt(${metadata.teacherAmount}), "${metadata.purpose}", "${metadata.reference}")`
+          }),
+          `Create Payment contract for fee ${i + 1}`
+        )
+
+        await withRetry(
+          () => teacherComputer.broadcast(paymentTx),
+          `Broadcast Payment for fee ${i + 1}`
+        )
+
+        const paymentContract = paymentEffect.res
+        paymentRevs.push(paymentContract._rev)
+        console.log(`      ✅ Payment contract created: ${paymentContract._id}`)
+
+        await sleep(2000)
+      }
+
+      console.log(`\n    📝 Created ${paymentRevs.length} Payment contracts for teacher`)
+
+      // Step 3: Teacher claims the Payment contracts
+      console.log(`\n    💰 Teacher claiming Payment contracts...`)
+
+      for (let i = 0; i < paymentRevs.length; i++) {
+        console.log(`\n    Claiming Payment ${i + 1}...`)
+
+        const paymentContract = await teacherComputer.sync(paymentRevs[i])
+        console.log(`      Amount: ${paymentContract.amount.toLocaleString()} sats`)
+
+        const { tx: claimTx } = await withRetry(
+          () => teacherComputer.encodeCall({
+            target: paymentContract,
+            property: 'claim',
+            args: [],
+            mod: attemptModuleSpec
+          }),
+          `Teacher claims Payment ${i + 1}`
+        )
+
+        await withRetry(
+          () => teacherComputer.broadcast(claimTx),
+          `Teacher broadcasts Payment claim ${i + 1}`
+        )
+
+        console.log(`      ✅ Payment claimed`)
+        await sleep(2000)
+      }
 
       await sleep(3000)
 
@@ -1374,37 +1431,37 @@ describe('🎓 BITCOIN COMPUTER QUIZ PLATFORM - COMPLETE FLOW TESTS', function()
         console.log(`      Status: ${attemptContract.status}`)
         console.log(`      Satoshis: ${attemptContract._satoshis.toLocaleString()}`)
 
-        expect(attemptContract.status).to.equal('forfeited')
+        expect(attemptContract.status).to.equal('fee_collected')  // Updated status
         expect(attemptContract._satoshis).to.equal(546n) // Reduced to dust
       }
 
-      console.log(`    ✅ All attempts marked as collected`)
+      console.log(`    ✅ All attempts marked as fee_collected`)
     })
 
     it('should prevent double-collection of entry fees', async function() {
       console.log('\n  ❌ Testing: Double-collection prevention...')
 
-      const [latestQuizRev] = await teacherComputer.query({ ids: [quizContract._id] })
-      const completedQuiz = await teacherComputer.sync(latestQuizRev)
-
       const [latestAttemptRev] = await teacherComputer.query({ ids: [attempt1._id] })
       const attemptContract = await teacherComputer.sync(latestAttemptRev)
 
+      console.log(`    Current status: ${attemptContract.status}`)
+      console.log(`    Current satoshis: ${attemptContract._satoshis.toLocaleString()}`)
+
       try {
-        // Try to claim entry fee again (should fail because status is already 'forfeited')
+        // Try to collect fee again (should fail because status is already 'fee_collected')
         const { tx } = await teacherComputer.encodeCall({
           target: attemptContract,
-          property: 'claimEntryFee',
+          property: 'collectFee',
           args: [],
           mod: attemptModuleSpec
         })
 
         await teacherComputer.broadcast(tx)
 
-        expect.fail('Should have thrown error for double-claim')
+        expect.fail('Should have thrown error for double-collection')
       } catch (error) {
         console.log(`    ✅ Correctly rejected: ${error.message}`)
-        expect(error.message).to.include('Ownership must be transferred first')
+        expect(error.message).to.include('Fee already collected')
       }
     })
   })

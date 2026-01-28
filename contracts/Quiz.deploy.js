@@ -7,7 +7,8 @@ export class Payment extends Contract {
     if (!purpose) throw new Error('Purpose required')
 
     super({
-      _owners: [recipient],
+      // DON'T set _owners here - let Bitcoin Computer set it to the creator
+      // This allows atomic swaps where creator != recipient
       _satoshis: amount,
       recipient,
       amount,
@@ -17,6 +18,10 @@ export class Payment extends Contract {
       createdAt: Date.now(),
       claimedAt: null
     })
+  }
+
+  transfer(to) {
+    this._owners = [to]
   }
 
   claim() {
@@ -158,33 +163,15 @@ export class Quiz extends Contract {
     if (!Array.isArray(winners) || winners.length === 0) {
       this.status = 'completed'
       this.distributedAt = Date.now()
-      return []
+      return
     }
 
-    const payments = []
-    let totalDistributed = BigInt(0)
-    const prizePerWinner = this.prizePool / BigInt(winners.length)
-
-    for (const winner of winners) {
-      const payment = new Payment(
-        winner.student,
-        prizePerWinner,
-        `Quiz Prize - ${this.questionHashIPFS}`,
-        this._id
-      )
-      payments.push(payment._rev)
-      totalDistributed += prizePerWinner
-    }
-
-    this.winners = winners.map((w, i) => ({
-      ...w,
-      prizeAmount: prizePerWinner.toString(),
-      paymentRev: payments[i]
-    }))
+    // DEFERRED PAYMENT MODEL:
+    // Store winner metadata only - Payment contracts created separately
+    // Prize pool stays as metadata, not locked in UTXO
+    this.winners = winners
     this.status = 'completed'
     this.distributedAt = Date.now()
-
-    return payments
   }
 
   markDistributionComplete() {
