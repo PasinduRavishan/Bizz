@@ -405,6 +405,12 @@ describe('🚀 ATOMIC SWAP SMOKE TEST - Deferred Payment Model', function() {
 
       // Student verifies their own attempt (only owner can modify contract)
       console.log('\n  ✅ Student verifying their attempt...')
+
+      // Mine a block to confirm reveal transaction
+      console.log('    ⛏️  Mining block to confirm reveal transaction...')
+      await mineBlockFromRPCClient(studentComputer)
+      await sleep(2000)
+
       const syncedAttempt = await studentComputer.sync(attempt1._rev)
 
       const { tx: verifyTx } = await withRetry(
@@ -439,6 +445,11 @@ describe('🚀 ATOMIC SWAP SMOKE TEST - Deferred Payment Model', function() {
   describe('Phase 4: Prize Distribution (Teacher creates Payment)', () => {
     it('should create prize Payment contract', async function() {
       console.log('\n  💰 Teacher creating Prize Payment...')
+
+      // Mine a block to confirm Phase 3 transactions
+      console.log('    ⛏️  Mining block to confirm Phase 3 transactions...')
+      await mineBlockFromRPCClient(teacherComputer)
+      await sleep(2000)
 
       const teacherBalanceBefore = (await teacherComputer.getBalance()).balance
 
@@ -478,6 +489,11 @@ describe('🚀 ATOMIC SWAP SMOKE TEST - Deferred Payment Model', function() {
   describe('Phase 5: Winner Claims Prize via Atomic Swap (pays entry fee)', () => {
     it('should execute atomic swap: student pays entry fee and receives prize', async function() {
       console.log('\n  🎁 Student claiming prize via atomic swap...')
+
+      // Mine a block to confirm Phase 4 transactions
+      console.log('    ⛏️  Mining block to confirm Phase 4 transactions...')
+      await mineBlockFromRPCClient(studentComputer)
+      await sleep(2000)
 
       const studentBalanceBefore = (await studentComputer.getBalance()).balance
       const teacherBalanceBefore = (await teacherComputer.getBalance()).balance

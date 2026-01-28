@@ -634,6 +634,11 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
     it('should transfer Student 2 entry fee to teacher (simple transfer)', async function() {
       console.log('\n  💸 Student 2 (loser) transferring entry fee to teacher...')
 
+      // Mine a block to confirm previous transactions from Phase 4
+      console.log('    ⛏️  Mining block to confirm Phase 4 transactions...')
+      await mineBlockFromRPCClient(student2Computer)
+      await sleep(2000)
+
       // Student 2 creates entry fee Payment
       console.log('    Step 1: Student 2 creates entry fee Payment...')
       const { tx: entryFeeTx, effect: entryFeeEffect} = await withRetry(
@@ -692,6 +697,11 @@ describe('🚀 COMPREHENSIVE TEST - Multiple Students (Winners & Losers)', funct
 
     it('should transfer Student 3 entry fee to teacher (simple transfer)', async function() {
       console.log('\n  💸 Student 3 (loser) transferring entry fee to teacher...')
+
+      // Mine a block to confirm Student 2's transactions
+      console.log('    ⛏️  Mining block to confirm Student 2 transactions...')
+      await mineBlockFromRPCClient(student3Computer)
+      await sleep(2000)
 
       // Student 3 creates entry fee Payment
       console.log('    Step 1: Student 3 creates entry fee Payment...')
