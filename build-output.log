@@ -1,0 +1,56 @@
+
+> bizz@0.1.0 build
+> next build
+
+▲ Next.js 16.1.1 (Turbopack)
+- Environments: .env.local, .env
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 32.7s
+  Running TypeScript ...
+  Collecting page data using 9 workers ...
+  Generating static pages using 9 workers (0/23) ...
+  Generating static pages using 9 workers (5/23) 
+  Generating static pages using 9 workers (11/23) 
+  Generating static pages using 9 workers (17/23) 
+✓ Generating static pages using 9 workers (23/23) in 1949.3ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/attempts
+├ ƒ /api/attempts/[id]/reveal
+├ ƒ /api/attempts/submit
+├ ƒ /api/auth/[...nextauth]
+├ ƒ /api/auth/signup
+├ ƒ /api/payments/claim
+├ ƒ /api/quizzes
+├ ƒ /api/quizzes/[id]/answers
+├ ƒ /api/quizzes/[id]/distribute
+├ ƒ /api/quizzes/[id]/payment-status
+├ ƒ /api/quizzes/[id]/retry-payments
+├ ƒ /api/quizzes/[id]/reveal
+├ ƒ /api/quizzes/create
+├ ƒ /api/stats
+├ ƒ /api/student/dashboard
+├ ƒ /api/teacher/dashboard
+├ ƒ /api/user/balance/refresh
+├ ƒ /api/users/[address]
+├ ƒ /api/wallet/balance
+├ ƒ /api/wallet/info
+├ ○ /auth/signin
+├ ○ /auth/signup
+├ ○ /student/browse
+├ ○ /student/dashboard
+├ ○ /student/my-attempts
+├ ƒ /student/reveal/[id]
+├ ƒ /student/take/[id]
+├ ○ /teacher/create
+├ ○ /teacher/dashboard
+└ ƒ /teacher/reveal/[id]
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

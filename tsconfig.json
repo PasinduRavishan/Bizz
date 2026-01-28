@@ -22,7 +22,10 @@
       "@/*": ["./src/*"]
     },
     "allowSyntheticDefaultImports": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+
+    "outDir": "./dist/",
+    "removeComments": true
   },
   "include": [
     "next-env.d.ts",

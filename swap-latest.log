@@ -1,0 +1,144 @@
+
+> bizz@0.1.0 test:swap
+> mocha --config .mocharc.swap.json
+
+[dotenv@17.2.3] injecting env (21) from .env.local -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+
+
+  🚀 ATOMIC SWAP SMOKE TEST - Deferred Payment Model
+
+================================================================================
+  🚀 INITIALIZING SWAP PATTERN TEST ENVIRONMENT
+================================================================================
+
+  📡 Creating Bitcoin Computer instances...
+    ✅ Teacher wallet: mnbvxe61J6GSRy9d7VKmcnb9V8Upk7PCG7
+    ✅ Student wallet: moF6SBiruf9h6cjNK9kmngES3wzQAoBjNZ
+
+  💰 Funding wallets from faucet...
+    ✅ Teacher funded: 10,000,000 sats
+    ✅ Student funded: 5,000,000 sats
+
+  📦 Deploying contract modules...
+    ✅ Quiz module: 9dd9ccca43e894115855d054ee41e8...
+    ✅ QuizAttempt module: fca5cdcb59defa29e4fe576f56da76...
+    ✅ PrizeSwap module: 4e9fa70a060ae90e9faf821c494c2b...
+
+  📝 Preparing quiz data...
+    ✅ Salt: 4805e992741c19745659...
+    ✅ Answer hashes: 3 hashes created
+    ✅ Student commitment: 761b45fa92c173614baa...
+
+================================================================================
+  ✅ SETUP COMPLETE - Ready to run tests
+================================================================================
+
+    Phase 1: Quiz Creation (Teacher pays only gas)
+
+  🎓 Creating Quiz contract...
+    Teacher balance before: 9,989,516 sats
+    ✅ Quiz created: 57d286d4c267a706bd39b1d746715af1e7a4385d14a88f4d3cddd5bf759b5b22:0
+    ✅ Status: active
+    ✅ UTXO holds: 546 sats (dust only)
+    ✅ Prize pool (metadata): 50,000 sats
+    ✅ Entry fee (metadata): 5,000 sats
+      Teacher Balance:
+        Before: 9,989,516 sats
+        After:  9,905,814 sats
+        Change: -83,702 sats
+      ✔ should create quiz with dust UTXO and metadata prize pool (7680ms)
+    Phase 2: Student Attempt (pays only gas, NO entry fee!)
+
+  👨‍🎓 Student submitting attempt...
+    Student balance before: 5,000,000 sats
+    Commitment: 761b45fa92c173614baa...
+    ✅ Attempt created: cb7ee83a4404975011dce54b6255f2608f99f9b9caa26c6ef5d99e9a784f5fc1:0
+    ✅ Status: committed
+    ✅ UTXO holds: 546 sats (dust only)
+    ✅ Entry fee (metadata): 5,000 sats
+    ✅ Entry fee NOT paid yet! ✨
+      Student Balance:
+        Before: 5,000,000 sats
+        After:  4,917,358 sats
+        Change: -82,642 sats
+      ✔ should allow student to submit attempt with NO upfront payment (5706ms)
+    Phase 3: Teacher Reveal & Auto-Scoring
+
+  🔓 Teacher revealing answers...
+    ⏰ Simulating deadline passage...
+    Current status: active
+    Revealing correct answers: Paris, 4, Blue
+      1) should allow teacher to reveal answers and auto-score attempt
+    Phase 4: Prize Distribution (Teacher creates Payment offer)
+
+  💰 Distributing prizes...
+      2) should create prize Payment contract for winner
+    Phase 5: Winner Claims Prize via Atomic Swap (pays entry fee)
+
+  🎁 Student claiming prize via atomic swap...
+    Student balance before: 4,917,358 sats
+    Teacher balance before: 9,905,814 sats
+
+    Step 1: Student creates entry fee Payment...
+      ✅ Entry fee Payment created: f21bd1b34f1a56f871029b7bcfab6676d9effa0030046c342ae47f092400177c:0
+      ✅ Amount: 5,000 sats
+
+    Step 2: Syncing contracts for swap...
+      3) should execute atomic swap: student pays entry fee and receives prize
+    ✅ Test Summary
+
+================================================================================
+  🎉 SMOKE TEST COMPLETED SUCCESSFULLY
+================================================================================
+
+  ✅ Verified:
+    • Quiz creation with dust UTXO (teacher pays only gas)
+    • Student attempt with NO upfront entry fee
+    • Teacher reveal & auto-scoring
+    • Prize distribution via Payment contracts
+    • Atomic swap: student pays entry fee to claim prize
+    • Student profits (prize - entry fee - gas)
+    • Teacher collects entry fee
+
+  🚀 Deferred Payment Model Working Perfectly!
+================================================================================
+      ✔ should display complete test summary
+
+
+  3 passing (35s)
+  3 failing
+
+  1) 🚀 ATOMIC SWAP SMOKE TEST - Deferred Payment Model
+       Phase 3: Teacher Reveal & Auto-Scoring
+         should allow teacher to reveal answers and auto-score attempt:
+     TypeError: quiz.reveal is not a function
+      at file:///Users/ravishan/Desktop/Intern/bizz/test/swap-flow.test.js:304:23
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async withRetry (file:///Users/ravishan/Desktop/Intern/bizz/test/swap-flow.test.js:79:14)
+      at async Context.<anonymous> (file:///Users/ravishan/Desktop/Intern/bizz/test/swap-flow.test.js:301:7)
+
+  2) 🚀 ATOMIC SWAP SMOKE TEST - Deferred Payment Model
+       Phase 4: Prize Distribution (Teacher creates Payment offer)
+         should create prize Payment contract for winner:
+     Error: Quiz must be revealed first
+      at Proxy.distributePrizes (9dd9ccca43e894115855d054ee41e849b20d4ced169a9af200b23fd1666af7b7:0:104:13)
+      at Object.eval (eval at <anonymous> (eval at makeEvaluate (file:///Users/ravishan/Desktop/Intern/bizz/node_modules/ses/src/make-evaluate.js:92:27)), <anonymous>:1:8)
+      at Object.eval (eval at makeEvaluate (file:///Users/ravishan/Desktop/Intern/bizz/node_modules/ses/src/make-evaluate.js:92:27), <anonymous>:12:22)
+      at safeEvaluate (file:///Users/ravishan/Desktop/Intern/bizz/node_modules/ses/src/make-safe-evaluator.js:78:14)
+      at compartmentEvaluate (file:///Users/ravishan/Desktop/Intern/bizz/node_modules/ses/src/compartment-evaluate.js:90:10)
+      at Compartment.evaluate (file:///Users/ravishan/Desktop/Intern/bizz/node_modules/ses/src/compartment.js:106:12)
+      at $c928f45f06f74cc1$export$489a84f048b0ef8.fromTransition (file:///Users/ravishan/Desktop/Intern/bizz/node_modules/@bitcoin-computer/lib/dist/bc-lib.main.es.mjs:1:108990)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async $70d9a433482b684f$export$14be6456f8698719.eval (file:///Users/ravishan/Desktop/Intern/bizz/node_modules/@bitcoin-computer/lib/dist/bc-lib.main.es.mjs:1:140242)
+      at async $70d9a433482b684f$export$14be6456f8698719.evalMocked (file:///Users/ravishan/Desktop/Intern/bizz/node_modules/@bitcoin-computer/lib/dist/bc-lib.main.es.mjs:1:143389)
+      at async Proxy._0x53333b (file:///Users/ravishan/Desktop/Intern/bizz/node_modules/@bitcoin-computer/lib/dist/bc-lib.main.es.mjs:1:53260)
+      at async Context.<anonymous> (file:///Users/ravishan/Desktop/Intern/bizz/test/swap-flow.test.js:352:7)
+
+  3) 🚀 ATOMIC SWAP SMOKE TEST - Deferred Payment Model
+       Phase 5: Winner Claims Prize via Atomic Swap (pays entry fee)
+         should execute atomic swap: student pays entry fee and receives prize:
+     TypeError: Cannot read properties of undefined (reading '_id')
+      at Context.<anonymous> (file:///Users/ravishan/Desktop/Intern/bizz/test/swap-flow.test.js:429:74)
+
+
+
