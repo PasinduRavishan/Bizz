@@ -1,0 +1,3 @@
+{
+  "/api/quizzes/[id]/retry-payments/route": "app/api/quizzes/[id]/retry-payments/route.js"
+}

@@ -1,0 +1,5 @@
+{
+  "spec": ["swap-flow.test.js", "swap-flow.test2.js"],
+  "timeout": 600000,
+  "slow": 10000
+}

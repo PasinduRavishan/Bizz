@@ -1,0 +1,10 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/wallet/balance/route.js")
+R.c("server/chunks/[root-of-the-server]__d3463fb1._.js")
+R.c("server/chunks/node_modules_next_f2da0d3e._.js")
+R.c("server/chunks/node_modules_bcryptjs_index_42ebb250.js")
+R.c("server/chunks/node_modules_crypto-js_7ad87ba5._.js")
+R.c("server/chunks/[root-of-the-server]__24f8fcd9._.js")
+R.c("server/chunks/[root-of-the-server]__42765a40._.js")
+R.c("server/chunks/packages_web__next-internal_server_app_api_wallet_balance_route_actions_d9c45f25.js")
+R.m(15945)
+module.exports=R.m(15945).exports

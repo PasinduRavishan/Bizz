@@ -1,0 +1,192 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { Card, CardBody, CardHeader } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+
+export default function StudentDashboard() {
+  const { data: session, status } = useSession()
+  const router = useRouter()
+  const [stats, setStats] = useState({
+    totalAttempts: 0,
+    passedQuizzes: 0,
+    availableQuizzes: 0
+  })
+
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/auth/signin')
+    } else if (session?.user?.role === 'TEACHER') {
+      router.push('/teacher/dashboard')
+    }
+  }, [session, status, router])
+
+  if (status === 'loading') {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!session || session.user.role !== 'STUDENT') {
+    return null
+  }
+
+  return (
+    <main className="container mx-auto px-4 py-8">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+          Welcome back, {session.user.name}! 📚
+        </h1>
+        <p className="text-gray-600 dark:text-gray-400">
+          Ready to take some quizzes and earn Bitcoin?
+        </p>
+      </div>
+
+      {/* Quick Stats */}
+      <div className="grid md:grid-cols-3 gap-6 mb-8">
+        <Card>
+          <CardBody className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Attempts</p>
+                <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats.totalAttempts}</p>
+              </div>
+              <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                <span className="text-2xl">📝</span>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Passed Quizzes</p>
+                <p className="text-3xl font-bold text-green-600 dark:text-green-400">{stats.passedQuizzes}</p>
+              </div>
+              <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+                <span className="text-2xl">✅</span>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Available Quizzes</p>
+                <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">{stats.availableQuizzes}</p>
+              </div>
+              <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
+                <span className="text-2xl">🎯</span>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="grid md:grid-cols-2 gap-6">
+        <Card hover>
+          <CardHeader>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              <span className="text-2xl">🔍</span>
+              Browse Quizzes
+            </h3>
+          </CardHeader>
+          <CardBody className="space-y-4">
+            <p className="text-gray-600 dark:text-gray-400">
+              Discover available quizzes and start earning Bitcoin by demonstrating your knowledge.
+            </p>
+            <Link href="/student/browse">
+              <Button className="w-full">
+                Browse All Quizzes
+              </Button>
+            </Link>
+          </CardBody>
+        </Card>
+
+        <Card hover>
+          <CardHeader>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              <span className="text-2xl">📊</span>
+              My Attempts
+            </h3>
+          </CardHeader>
+          <CardBody className="space-y-4">
+            <p className="text-gray-600 dark:text-gray-400">
+              View your quiz history, check results, and track your progress over time.
+            </p>
+            <Link href="/student/my-attempts">
+              <Button variant="outline" className="w-full">
+                View My Attempts
+              </Button>
+            </Link>
+          </CardBody>
+        </Card>
+      </div>
+
+      {/* How It Works */}
+      <Card className="mt-8">
+        <CardHeader>
+          <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+            How It Works
+          </h3>
+        </CardHeader>
+        <CardBody>
+          <div className="grid md:grid-cols-4 gap-6">
+            <div className="text-center">
+              <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+                <span className="text-xl font-bold text-blue-600 dark:text-blue-400">1</span>
+              </div>
+              <h4 className="font-semibold mb-2 text-gray-900 dark:text-white">Browse</h4>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Find quizzes that interest you
+              </p>
+            </div>
+
+            <div className="text-center">
+              <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+                <span className="text-xl font-bold text-blue-600 dark:text-blue-400">2</span>
+              </div>
+              <h4 className="font-semibold mb-2 text-gray-900 dark:text-white">Pay Entry</h4>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Pay the entry fee to attempt
+              </p>
+            </div>
+
+            <div className="text-center">
+              <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+                <span className="text-xl font-bold text-blue-600 dark:text-blue-400">3</span>
+              </div>
+              <h4 className="font-semibold mb-2 text-gray-900 dark:text-white">Take Quiz</h4>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Answer questions honestly
+              </p>
+            </div>
+
+            <div className="text-center">
+              <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+                <span className="text-xl font-bold text-green-600 dark:text-green-400">4</span>
+              </div>
+              <h4 className="font-semibold mb-2 text-gray-900 dark:text-white">Earn Bitcoin</h4>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Get rewards for passing
+              </p>
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+    </main>
+  )
+}

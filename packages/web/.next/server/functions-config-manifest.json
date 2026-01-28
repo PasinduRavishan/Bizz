@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "functions": {
+    "/api/attempts/[id]": {},
+    "/api/attempts/[id]/refund": {},
+    "/api/attempts/submit": {},
+    "/api/prizes/claim": {},
+    "/api/quizzes/[id]/answers": {},
+    "/api/quizzes/[id]/distribute": {},
+    "/api/quizzes/[id]/mark-abandoned": {},
+    "/api/quizzes/[id]/payment-status": {},
+    "/api/quizzes/[id]/retry-payments": {},
+    "/api/quizzes/[id]/reveal": {},
+    "/api/quizzes/create": {},
+    "/api/user/balance/refresh": {},
+    "/api/wallet/balance": {},
+    "/api/wallet/info": {}
+  }
+}
