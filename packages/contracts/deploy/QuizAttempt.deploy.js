@@ -49,35 +49,35 @@ export class QuizAttempt extends Contract {
         this.status = 'revealed';
         this.revealTimestamp = Date.now();
     }
-    // verify(score, passed) {
-    //     if (this.status !== 'committed' && this.status !== 'revealed') {
-    //         throw new Error('Attempt must be committed or revealed before verification');
-    //     }
-    //     this.score = score;
-    //     this.passed = passed;
-    //     this.status = 'verified';
-    // }
-    // fail() {
-    //     this.status = 'failed';
-    //     this.passed = false;
-    // }
-    // transferOwnershipToTeacher(quiz) {
-    //     if (quiz.status !== 'completed') {
-    //         throw new Error('Cannot transfer ownership: quiz not completed');
-    //     }
-    //     if (this.status === 'ownership-transferred' || this.status === 'forfeited') {
-    //         throw new Error('Ownership already transferred');
-    //     }
-    //     this._owners = [this.quizTeacher];
-    //     this.status = 'ownership-transferred';
-    // }
-    // claimEntryFee() {
-    //     if (this.status !== 'ownership-transferred') {
-    //         throw new Error('Ownership must be transferred first');
-    //     }
-    //     this._satoshis = BigInt(546);
-    //     this.status = 'forfeited';
-    // }
+    verify(score, passed) {
+        if (this.status !== 'committed' && this.status !== 'revealed') {
+            throw new Error('Attempt must be committed or revealed before verification');
+        }
+        this.score = score;
+        this.passed = passed;
+        this.status = 'verified';
+    }
+    fail() {
+        this.status = 'failed';
+        this.passed = false;
+    }
+    transferOwnershipToTeacher(quiz) {
+        if (quiz.status !== 'completed') {
+            throw new Error('Cannot transfer ownership: quiz not completed');
+        }
+        if (this.status === 'ownership-transferred' || this.status === 'forfeited') {
+            throw new Error('Ownership already transferred');
+        }
+        this._owners = [this.quizTeacher];
+        this.status = 'ownership-transferred';
+    }
+    claimEntryFee() {
+        if (this.status !== 'ownership-transferred') {
+            throw new Error('Ownership must be transferred first');
+        }
+        this._satoshis = BigInt(546);
+        this.status = 'forfeited';
+    }
     collectFee() {
         if (!['committed', 'verified', 'failed'].includes(this.status)) {
             throw new Error('Cannot collect fee from this status');
@@ -110,18 +110,18 @@ export class QuizAttempt extends Contract {
         this.status = 'refunded';
         this._satoshis = BigInt(546); // Reduce to dust, rest goes to student
     }
-    // getInfo() {
-    //     return {
-    //         attemptId: this._id,
-    //         student: this.student,
-    //         quizRef: this.quizRef,
-    //         status: this.status,
-    //         submitTimestamp: this.submitTimestamp,
-    //         revealTimestamp: this.revealTimestamp,
-    //         score: this.score,
-    //         passed: this.passed,
-    //         hasRevealed: this.status !== 'committed',
-    //         revealedAnswers: this.revealedAnswers
-    //     };
-    // }
+    getInfo() {
+        return {
+            attemptId: this._id,
+            student: this.student,
+            quizRef: this.quizRef,
+            status: this.status,
+            submitTimestamp: this.submitTimestamp,
+            revealTimestamp: this.revealTimestamp,
+            score: this.score,
+            passed: this.passed,
+            hasRevealed: this.status !== 'committed',
+            revealedAnswers: this.revealedAnswers
+        };
+    }
 }

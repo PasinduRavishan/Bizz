@@ -1,3 +1,0 @@
-{
-  "/api/quizzes/[id]/answers/route": "app/api/quizzes/[id]/answers/route.js"
-}
