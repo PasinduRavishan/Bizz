@@ -4,21 +4,27 @@
 
 export class PrizeSwap extends Contract {
     /**
-     * Atomic swap: Student pays entry fee and receives prize payment
+     * Atomic swap: Student gives answer proof and receives prize payment
+     *
+     * NOTE: Entry fees already collected in Phase 1 (AttemptAccess.exec)
+     * This swap exchanges prize for answer proof only
      *
      * @param prizePayment - Payment contract from teacher (prize amount)
-     * @param entryFeePayment - Payment contract from student (entry fee)
+     * @param answerProof - AnswerProof contract from student (their answers)
      * @param attempt - QuizAttempt contract
-     * @returns [prizePayment, entryFeePayment, attempt] with updated ownership
+     * @returns [prizePayment, answerProof, attempt] with updated ownership
      */
-    static swap(prizePayment, entryFeePayment, attempt) {
+    static swap(prizePayment, answerProof, attempt) {
         const [student] = attempt._owners;
-        const [entryFeePayer] = entryFeePayment._owners;
+        const [proofOwner] = answerProof._owners;
         if (student !== prizePayment.recipient) {
             throw new Error('Prize payment must be addressed to attempt owner');
         }
-        if (entryFeePayer !== student) {
-            throw new Error('Entry fee must be paid by student');
+        if (proofOwner !== student) {
+            throw new Error('Answer proof must be owned by student');
+        }
+        if (answerProof.attemptRef !== attempt._id) {
+            throw new Error('Answer proof must match the attempt');
         }
         if (attempt.status !== 'verified') {
             throw new Error('Attempt must be verified before claiming prize');
@@ -26,10 +32,13 @@ export class PrizeSwap extends Contract {
         if (!attempt.passed) {
             throw new Error('Only passing attempts can claim prizes');
         }
+        if (!answerProof.passed) {
+            throw new Error('Answer proof must show student passed');
+        }
         const teacher = attempt.quizTeacher;
         prizePayment.transfer(student); // Student receives prize
-        entryFeePayment.transfer(teacher); // Teacher receives entry fee
+        answerProof.transfer(teacher); // Teacher receives answer proof
         attempt.claimPrize();
-        return [prizePayment, entryFeePayment, attempt];
+        return [prizePayment, answerProof, attempt];
     }
 }

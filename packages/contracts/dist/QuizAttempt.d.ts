@@ -8,24 +8,20 @@ export declare class QuizAttempt extends Contract {
     quizRef: string;
     answerCommitment: string;
     quizTeacher: string;
-    revealedAnswers: string[] | null;
-    nonce: string | null;
+    entryFee: bigint;
     score: number | null;
     passed: boolean | null;
     status: string;
     submitTimestamp: number;
-    revealTimestamp: number | null;
     claimedAt: number | null;
     version: string;
-    constructor(student: string, quizRef: string, answerCommitment: string, entryFee: bigint, quizTeacher: string);
-    reveal(answers: string[], nonce: string): void;
+    constructor(owner: string, // Initially teacher, then student after exec
+    quizRef: string, answerCommitment: string, // Empty at creation, filled after purchase
+    entryFee: bigint, quizTeacher: string);
+    transfer(newOwner: string): void;
+    submitCommitment(commitment: string): void;
     verify(score: number, passed: boolean): void;
     fail(): void;
-    transferOwnershipToTeacher(quiz: {
-        status: string;
-    }): void;
-    claimEntryFee(): void;
-    collectFee(): void;
     claimPrize(): void;
     claimRefund(quiz: {
         status: string;
@@ -36,11 +32,9 @@ export declare class QuizAttempt extends Contract {
         quizRef: string;
         status: string;
         submitTimestamp: number;
-        revealTimestamp: number | null;
         score: number | null;
         passed: boolean | null;
-        hasRevealed: boolean;
-        revealedAnswers: string[] | null;
+        answerCommitment: string;
     };
 }
 //# sourceMappingURL=QuizAttempt.d.ts.map

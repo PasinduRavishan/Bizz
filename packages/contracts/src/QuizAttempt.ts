@@ -16,66 +16,73 @@ export class QuizAttempt extends Contract {
   quizRef!: string
   answerCommitment!: string
   quizTeacher!: string
-  revealedAnswers!: string[] | null
-  nonce!: string | null
+  entryFee!: bigint
   score!: number | null
   passed!: boolean | null
-  status!: string
+  status!: string  // 'available' | 'owned' | 'committed' | 'verified' | 'prize_claimed' | 'refunded'
   submitTimestamp!: number
-  revealTimestamp!: number | null
   claimedAt!: number | null
   version!: string
 
-  constructor(student: string, quizRef: string, answerCommitment: string, entryFee: bigint, quizTeacher: string) {
-    if (!student) throw new Error('Student public key required')
+  constructor(
+    owner: string,           // Initially teacher, then student after exec
+    quizRef: string,
+    answerCommitment: string,  // Empty at creation, filled after purchase
+    entryFee: bigint,
+    quizTeacher: string
+  ) {
+    if (!owner) throw new Error('Owner required')
     if (!quizRef) throw new Error('Quiz reference required')
-    if (!answerCommitment) throw new Error('Answer commitment required')
+    // answerCommitment can be empty - filled after purchase
     if (entryFee < BigInt(5000)) {
       throw new Error('Entry fee must be at least 5,000 satoshis')
     }
     if (!quizTeacher) throw new Error('Quiz teacher public key required')
 
     super({
-      _owners: [student],
-      _satoshis: BigInt(546),
-      student,
+      _owners: [owner],
+      _satoshis: BigInt(546),  // Dust only
+      student: owner,          // Will be updated after transfer
       quizRef,
       answerCommitment,
-      entryFee, // Stored as metadata only
       quizTeacher,
-      revealedAnswers: null,
-      nonce: null,
+      entryFee,
       score: null,
       passed: null,
-      status: 'committed',
+      status: 'available',  // NEW: Initial status for teacher-created attempts
       submitTimestamp: Date.now(),
-      revealTimestamp: null,
       claimedAt: null,
-      version: '1.0.0'
+      version: '2.0.0'  // Version bump for new flow
     })
   }
 
-  reveal(answers: string[], nonce: string): void {
-    if (this.status !== 'committed') {
-      throw new Error('Attempt already revealed or verified')
-    }
-    if (!Array.isArray(answers) || answers.length === 0) {
-      throw new Error('Answers must be a non-empty array')
-    }
-    if (!nonce) {
-      throw new Error('Nonce is required')
-    }
-
-    this.revealedAnswers = answers
-    this.nonce = nonce
-    this.status = 'revealed'
-    this.revealTimestamp = Date.now()
+  // NEW: Transfer ownership (called by AttemptAccess.exec)
+  transfer(newOwner: string): void {
+    this._owners = [newOwner]
+    this.student = newOwner
+    this.status = 'owned'
   }
 
+  // NEW: Student submits answers after purchasing attempt
+  submitCommitment(commitment: string): void {
+    if (this.status !== 'owned') {
+      throw new Error('Must own attempt before submitting answers')
+    }
+    if (!commitment) {
+      throw new Error('Commitment required')
+    }
+
+    this.answerCommitment = commitment
+    this.status = 'committed'
+    this.submitTimestamp = Date.now()
+  }
+
+  // REMOVED: reveal() method (no student reveal phase)
+
+  // UPDATED: verify() now works from commitment only
   verify(score: number, passed: boolean): void {
-    // Allow verification from either 'committed' (auto-grading) or 'revealed' (manual reveal)
-    if (this.status !== 'committed' && this.status !== 'revealed') {
-      throw new Error('Attempt must be committed or revealed before verification')
+    if (this.status !== 'committed') {
+      throw new Error('Attempt must be committed before verification')
     }
 
     this.score = score
@@ -86,49 +93,6 @@ export class QuizAttempt extends Contract {
   fail(): void {
     this.status = 'failed'
     this.passed = false
-  }
-
-  transferOwnershipToTeacher(quiz: { status: string }): void {
-    // Step 1: Student transfers ownership to teacher
-    // MUST be called by STUDENT (current owner) to authorize the ownership transfer
-    if (quiz.status !== 'completed') {
-      throw new Error('Cannot transfer ownership: quiz not completed')
-    }
-    if (this.status === 'ownership-transferred' || this.status === 'forfeited') {
-      throw new Error('Ownership already transferred')
-    }
-
-    // Transfer ownership to teacher (creates new UTXO with teacher as owner)
-    this._owners = [this.quizTeacher]
-    this.status = 'ownership-transferred'
-  }
-
-  claimEntryFee(): void {
-    // Step 2: Teacher claims the entry fee
-    // MUST be called by TEACHER (new owner) after ownership transfer
-    if (this.status !== 'ownership-transferred') {
-      throw new Error('Ownership must be transferred first')
-    }
-
-    // Reduce to dust - funds go to caller (teacher)
-    this._satoshis = BigInt(546)
-    this.status = 'forfeited'
-  }
-
-  // Mark attempt as fee collected
-  // Entry fee is stored as metadata (like Quiz.prizePool), not locked in UTXO
-  // Payment contracts must be created separately by the teacher
-  collectFee(): void {
-    // Can collect from committed, verified, or failed status
-    if (!['committed', 'verified', 'failed'].includes(this.status)) {
-      throw new Error('Cannot collect fee from this status')
-    }
-    if (this.status === 'fee_collected') {
-      throw new Error('Fee already collected')
-    }
-
-    // Mark as collected (satoshis already at dust level)
-    this.status = 'fee_collected'
   }
 
   claimPrize(): void {
@@ -143,10 +107,6 @@ export class QuizAttempt extends Contract {
   }
 
   claimRefund(quiz: { status: string }): void {
-    // Student can claim refund if:
-    // 1. Quiz is abandoned (teacher never revealed or never distributed)
-    // 2. They haven't claimed refund yet
-    // 3. Caller is the student who owns this attempt
     if (quiz.status !== 'abandoned') {
       throw new Error('Cannot claim refund: quiz not abandoned')
     }
@@ -157,10 +117,8 @@ export class QuizAttempt extends Contract {
       throw new Error('Only the student can claim refund')
     }
 
-    // Mark as refunded and reduce to dust
-    // The actual refund amount is withdrawn by the student wallet
     this.status = 'refunded'
-    this._satoshis = BigInt(546) // Reduce to dust, rest goes to student
+    this._satoshis = BigInt(546)
   }
 
   getInfo() {
@@ -170,11 +128,9 @@ export class QuizAttempt extends Contract {
       quizRef: this.quizRef,
       status: this.status,
       submitTimestamp: this.submitTimestamp,
-      revealTimestamp: this.revealTimestamp,
       score: this.score,
       passed: this.passed,
-      hasRevealed: this.status !== 'committed',
-      revealedAnswers: this.revealedAnswers
+      answerCommitment: this.answerCommitment
     }
   }
 }

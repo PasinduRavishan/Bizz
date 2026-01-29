@@ -9,7 +9,18 @@ interface Payment extends Contract {
     status: string;
     transfer(to: string): void;
 }
+interface AnswerProof extends Contract {
+    _owners: string[];
+    student: string;
+    quizRef: string;
+    attemptRef: string;
+    answers: string[];
+    score: number;
+    passed: boolean;
+    transfer(to: string): void;
+}
 interface QuizAttempt extends Contract {
+    _id: string;
     _owners: string[];
     student: string;
     quizTeacher: string;
@@ -20,14 +31,17 @@ interface QuizAttempt extends Contract {
 }
 export declare class PrizeSwap extends Contract {
     /**
-     * Atomic swap: Student pays entry fee and receives prize payment
+     * Atomic swap: Student gives answer proof and receives prize payment
+     *
+     * NOTE: Entry fees already collected in Phase 1 (AttemptAccess.exec)
+     * This swap exchanges prize for answer proof only
      *
      * @param prizePayment - Payment contract from teacher (prize amount)
-     * @param entryFeePayment - Payment contract from student (entry fee)
+     * @param answerProof - AnswerProof contract from student (their answers)
      * @param attempt - QuizAttempt contract
-     * @returns [prizePayment, entryFeePayment, attempt] with updated ownership
+     * @returns [prizePayment, answerProof, attempt] with updated ownership
      */
-    static swap(prizePayment: Payment, entryFeePayment: Payment, attempt: QuizAttempt): [Payment, Payment, QuizAttempt];
+    static swap(prizePayment: Payment, answerProof: AnswerProof, attempt: QuizAttempt): [Payment, AnswerProof, QuizAttempt];
 }
 export {};
 //# sourceMappingURL=PrizeSwap.d.ts.map

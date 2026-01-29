@@ -24,7 +24,7 @@ const deployDir = join(contractsDir, 'deploy');
 mkdirSync(deployDir, { recursive: true });
 
 // List of contract files to process
-const contracts = ['Quiz', 'QuizAttempt', 'PrizeSwap', 'Payment'];
+const contracts = ['Quiz', 'QuizAttempt', 'PrizeSwap', 'Payment', 'AttemptAccess', 'AnswerProof'];
 
 console.log('🔨 Building deployment files from TypeScript sources...\n');
 

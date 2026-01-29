@@ -16,8 +16,21 @@ interface Payment extends Contract {
   transfer(to: string): void
 }
 
+// Type for AnswerProof contract
+interface AnswerProof extends Contract {
+  _owners: string[]
+  student: string
+  quizRef: string
+  attemptRef: string
+  answers: string[]
+  score: number
+  passed: boolean
+  transfer(to: string): void
+}
+
 // Type for QuizAttempt contract
 interface QuizAttempt extends Contract {
+  _id: string
   _owners: string[]
   student: string
   quizTeacher: string
@@ -29,56 +42,66 @@ interface QuizAttempt extends Contract {
 
 export class PrizeSwap extends Contract {
   /**
-   * Atomic swap: Student pays entry fee and receives prize payment
+   * Atomic swap: Student gives answer proof and receives prize payment
+   *
+   * NOTE: Entry fees already collected in Phase 1 (AttemptAccess.exec)
+   * This swap exchanges prize for answer proof only
    *
    * @param prizePayment - Payment contract from teacher (prize amount)
-   * @param entryFeePayment - Payment contract from student (entry fee)
+   * @param answerProof - AnswerProof contract from student (their answers)
    * @param attempt - QuizAttempt contract
-   * @returns [prizePayment, entryFeePayment, attempt] with updated ownership
+   * @returns [prizePayment, answerProof, attempt] with updated ownership
    */
   static swap(
     prizePayment: Payment,
-    entryFeePayment: Payment,
+    answerProof: AnswerProof,
     attempt: QuizAttempt
-  ): [Payment, Payment, QuizAttempt] {
+  ): [Payment, AnswerProof, QuizAttempt] {
     // Get current owners
     const [student] = attempt._owners
-    const [entryFeePayer] = entryFeePayment._owners
+    const [proofOwner] = answerProof._owners
 
     // Verification 1: Prize payment recipient matches attempt owner
     if (student !== prizePayment.recipient) {
       throw new Error('Prize payment must be addressed to attempt owner')
     }
 
-    // Verification 2: Entry fee payment is from the student (owner creates it)
-    if (entryFeePayer !== student) {
-      throw new Error('Entry fee must be paid by student')
+    // Verification 2: Answer proof is owned by the student
+    if (proofOwner !== student) {
+      throw new Error('Answer proof must be owned by student')
     }
 
-    // Verification 3: Attempt is in verified status (graded)
+    // Verification 3: Answer proof matches the attempt
+    if (answerProof.attemptRef !== attempt._id) {
+      throw new Error('Answer proof must match the attempt')
+    }
+
+    // Verification 4: Attempt is in verified status (graded)
     if (attempt.status !== 'verified') {
       throw new Error('Attempt must be verified before claiming prize')
     }
 
-    // Verification 4: Student passed the quiz
+    // Verification 5: Student passed the quiz
     if (!attempt.passed) {
       throw new Error('Only passing attempts can claim prizes')
     }
 
-    // Note: Status check for 'prize_claimed' removed as it can't be both
-    // 'verified' and 'prize_claimed' at the same time
+    // Verification 6: Answer proof shows student passed
+    if (!answerProof.passed) {
+      throw new Error('Answer proof must show student passed')
+    }
 
     // Get teacher from attempt
     const teacher = attempt.quizTeacher
 
     // Atomic swap: Exchange ownership using transfer() methods
-    prizePayment.transfer(student)      // Student receives prize
-    entryFeePayment.transfer(teacher)   // Teacher receives entry fee
+    prizePayment.transfer(student)    // Student receives prize
+    answerProof.transfer(teacher)     // Teacher receives answer proof
 
     // Mark attempt as claimed using its method
     attempt.claimPrize()
 
     // Return all three objects with updated state
-    return [prizePayment, entryFeePayment, attempt]
+    return [prizePayment, answerProof, attempt]
   }
 }

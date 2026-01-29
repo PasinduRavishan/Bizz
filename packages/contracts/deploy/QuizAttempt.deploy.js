@@ -3,55 +3,53 @@
 // Edit the TypeScript file in src/QuizAttempt.ts instead
 
 export class QuizAttempt extends Contract {
-    constructor(student, quizRef, answerCommitment, entryFee, quizTeacher) {
-        if (!student)
-            throw new Error('Student public key required');
+    constructor(owner, // Initially teacher, then student after exec
+        quizRef, answerCommitment, // Empty at creation, filled after purchase
+        entryFee, quizTeacher) {
+        if (!owner)
+            throw new Error('Owner required');
         if (!quizRef)
             throw new Error('Quiz reference required');
-        if (!answerCommitment)
-            throw new Error('Answer commitment required');
         if (entryFee < BigInt(5000)) {
             throw new Error('Entry fee must be at least 5,000 satoshis');
         }
         if (!quizTeacher)
             throw new Error('Quiz teacher public key required');
         super({
-            _owners: [student],
-            _satoshis: BigInt(546),
-            student,
+            _owners: [owner],
+            _satoshis: BigInt(546), // Dust only
+            student: owner, // Will be updated after transfer
             quizRef,
             answerCommitment,
-            entryFee, // Stored as metadata only
             quizTeacher,
-            revealedAnswers: null,
-            nonce: null,
+            entryFee,
             score: null,
             passed: null,
-            status: 'committed',
+            status: 'available', // NEW: Initial status for teacher-created attempts
             submitTimestamp: Date.now(),
-            revealTimestamp: null,
             claimedAt: null,
-            version: '1.0.0'
+            version: '2.0.0' // Version bump for new flow
         });
     }
-    reveal(answers, nonce) {
-        if (this.status !== 'committed') {
-            throw new Error('Attempt already revealed or verified');
+    transfer(newOwner) {
+        this._owners = [newOwner];
+        this.student = newOwner;
+        this.status = 'owned';
+    }
+    submitCommitment(commitment) {
+        if (this.status !== 'owned') {
+            throw new Error('Must own attempt before submitting answers');
         }
-        if (!Array.isArray(answers) || answers.length === 0) {
-            throw new Error('Answers must be a non-empty array');
+        if (!commitment) {
+            throw new Error('Commitment required');
         }
-        if (!nonce) {
-            throw new Error('Nonce is required');
-        }
-        this.revealedAnswers = answers;
-        this.nonce = nonce;
-        this.status = 'revealed';
-        this.revealTimestamp = Date.now();
+        this.answerCommitment = commitment;
+        this.status = 'committed';
+        this.submitTimestamp = Date.now();
     }
     verify(score, passed) {
-        if (this.status !== 'committed' && this.status !== 'revealed') {
-            throw new Error('Attempt must be committed or revealed before verification');
+        if (this.status !== 'committed') {
+            throw new Error('Attempt must be committed before verification');
         }
         this.score = score;
         this.passed = passed;
@@ -60,32 +58,6 @@ export class QuizAttempt extends Contract {
     fail() {
         this.status = 'failed';
         this.passed = false;
-    }
-    transferOwnershipToTeacher(quiz) {
-        if (quiz.status !== 'completed') {
-            throw new Error('Cannot transfer ownership: quiz not completed');
-        }
-        if (this.status === 'ownership-transferred' || this.status === 'forfeited') {
-            throw new Error('Ownership already transferred');
-        }
-        this._owners = [this.quizTeacher];
-        this.status = 'ownership-transferred';
-    }
-    claimEntryFee() {
-        if (this.status !== 'ownership-transferred') {
-            throw new Error('Ownership must be transferred first');
-        }
-        this._satoshis = BigInt(546);
-        this.status = 'forfeited';
-    }
-    collectFee() {
-        if (!['committed', 'verified', 'failed'].includes(this.status)) {
-            throw new Error('Cannot collect fee from this status');
-        }
-        if (this.status === 'fee_collected') {
-            throw new Error('Fee already collected');
-        }
-        this.status = 'fee_collected';
     }
     claimPrize() {
         if (this.status !== 'verified') {
@@ -108,7 +80,7 @@ export class QuizAttempt extends Contract {
             throw new Error('Only the student can claim refund');
         }
         this.status = 'refunded';
-        this._satoshis = BigInt(546); // Reduce to dust, rest goes to student
+        this._satoshis = BigInt(546);
     }
     getInfo() {
         return {
@@ -117,11 +89,9 @@ export class QuizAttempt extends Contract {
             quizRef: this.quizRef,
             status: this.status,
             submitTimestamp: this.submitTimestamp,
-            revealTimestamp: this.revealTimestamp,
             score: this.score,
             passed: this.passed,
-            hasRevealed: this.status !== 'committed',
-            revealedAnswers: this.revealedAnswers
+            answerCommitment: this.answerCommitment
         };
     }
 }
