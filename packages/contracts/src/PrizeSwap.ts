@@ -41,17 +41,7 @@ interface QuizAttempt extends Contract {
 }
 
 export class PrizeSwap extends Contract {
-  /**
-   * Atomic swap: Student gives answer proof and receives prize payment
-   *
-   * NOTE: Entry fees already collected in Phase 1 (AttemptAccess.exec)
-   * This swap exchanges prize for answer proof only
-   *
-   * @param prizePayment - Payment contract from teacher (prize amount)
-   * @param answerProof - AnswerProof contract from student (their answers)
-   * @param attempt - QuizAttempt contract
-   * @returns [prizePayment, answerProof, attempt] with updated ownership
-   */
+
   static swap(
     prizePayment: Payment,
     answerProof: AnswerProof,

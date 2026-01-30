@@ -31,7 +31,7 @@ import dotenv from 'dotenv'
 // Import deployed contracts
 import { Quiz, Payment } from '@bizz/contracts/deploy/Quiz.deploy.js'
 import { QuizAttempt } from '@bizz/contracts/deploy/QuizAttempt.deploy.js'
-import { AttemptAccess } from '@bizz/contracts/deploy/AttemptAccess.deploy.min.js'
+import { AttemptAccess } from '@bizz/contracts/deploy/AttemptAccess.deploy.js'
 import { AnswerProof } from '@bizz/contracts/deploy/AnswerProof.deploy.js'
 import { PrizeSwap } from '@bizz/contracts/deploy/PrizeSwap.deploy.js'
 
@@ -136,7 +136,7 @@ function displayBalanceChange(label, before, after) {
 async function mineBlockFromRPCClient(computer) {
   try {
     const newAddress = await computer.rpcCall('getnewaddress', 'mywallet legacy')
-    console.log(`      ⛏️  Mining block...`)
+    console.log(`        Mining block...`)
     await computer.rpcCall('generatetoaddress', `1 ${newAddress.result}`)
     await sleep(2000)
   } catch (error) {
@@ -310,7 +310,7 @@ describe('🎓 EXEC + SWAP FLOW - Entry Fee Collection & Prize Distribution', fu
       hashAnswer('quiz-id', index, answer, salt)
     )
 
-    // Student answers: S1=100%, S2=33%, S3=66%
+    // Student answers: S1=100%, S2=0%, S3=33%
     student1Answers = ['Paris', '4', 'Blue']    // 100% - PASS
     student2Answers = ['London', '3', 'Red']    // 0% - FAIL
     student3Answers = ['Paris', '3', 'Red']     // 33% - FAIL
@@ -520,10 +520,10 @@ describe('🎓 EXEC + SWAP FLOW - Entry Fee Collection & Prize Distribution', fu
       const student1BalanceAfter = (await student1Computer.getBalance()).balance
       const teacherBalanceAfter = (await teacherComputer.getBalance()).balance
 
-      console.log(`\n    ✅ EXEC COMPLETED SUCCESSFULLY!`)
-      console.log(`    ✅ Attempt now owned by: ${attempt1._owners[0] === student1PubKey ? 'Student 1 ✅' : 'Teacher ❌'}`)
-      console.log(`    ✅ Attempt status: ${attempt1.status}`)
-      console.log(`    ✅ Entry fee transferred atomically in single transaction`)
+
+      console.log(`     Attempt now owned by: ${attempt1._owners[0] === student1PubKey ? 'Student 1 ✅' : 'Teacher ❌'}`)
+      console.log(`     Attempt status: ${attempt1.status}`)
+      console.log(`     Entry fee transferred atomically in single transaction`)
 
       displayBalanceChange('Student 1 Balance', student1BalanceBefore, student1BalanceAfter)
       displayBalanceChange('Teacher Balance', teacherBalanceBefore, teacherBalanceAfter)
@@ -534,7 +534,7 @@ describe('🎓 EXEC + SWAP FLOW - Entry Fee Collection & Prize Distribution', fu
     })
 
     it('should allow student 1 to submit answers after purchase', async function () {
-      console.log('\n  ✍️  Student 1 submitting answers...')
+      console.log('\n    Student 1 submitting answers...')
 
       await mineBlockFromRPCClient(student1Computer)
 
