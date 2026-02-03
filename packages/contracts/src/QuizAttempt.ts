@@ -5,24 +5,23 @@
 import { Contract } from '@bitcoin-computer/lib'
 
 export class QuizAttempt extends Contract {
-  // Contract base properties
-  _id!: string
-  _rev!: string
-  _owners!: string[]
-  _satoshis!: bigint
-
-  // QuizAttempt properties
-  student!: string
-  quizRef!: string
-  answerCommitment!: string
-  quizTeacher!: string
-  entryFee!: bigint
-  score!: number | null
-  passed!: boolean | null
-  status!: string  // 'available' | 'owned' | 'committed' | 'verified' | 'prize_claimed' | 'refunded'
-  submitTimestamp!: number
-  claimedAt!: number | null
-  version!: string
+  // Use 'declare' to tell TypeScript these properties exist without emitting them
+  // This prevents "Cannot define property" errors in Bitcoin Computer
+  declare _id: string
+  declare _rev: string
+  declare _owners: string[]
+  declare _satoshis: bigint
+  declare student: string
+  declare quizRef: string
+  declare answerCommitment: string
+  declare quizTeacher: string
+  declare entryFee: bigint
+  declare score: number | null
+  declare passed: boolean | null
+  declare status: string
+  declare submitTimestamp: number
+  declare claimedAt: number | null
+  declare version: string
 
   constructor(
     owner: string,           // Initially teacher, then student after exec
@@ -39,17 +38,22 @@ export class QuizAttempt extends Contract {
     }
     if (!quizTeacher) throw new Error('Quiz teacher public key required')
 
+    // Determine initial status based on whether teacher or student is creating
+    // If owner === quizTeacher, then it's teacher-created (available for exec)
+    // If owner !== quizTeacher, then it's student-created (owned immediately)
+    const initialStatus = owner === quizTeacher ? 'available' : 'owned'
+
     super({
       _owners: [owner],
       _satoshis: BigInt(546),  // Dust only
-      student: owner,          // Will be updated after transfer
+      student: owner,          // Will be updated after transfer in exec flow
       quizRef,
       answerCommitment,
       quizTeacher,
       entryFee,
       score: null,
       passed: null,
-      status: 'available',  // NEW: Initial status for teacher-created attempts
+      status: initialStatus,
       submitTimestamp: Date.now(),
       claimedAt: null,
       version: '2.0.0'  // Version bump for new flow

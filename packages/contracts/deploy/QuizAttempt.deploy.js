@@ -4,8 +4,8 @@
 
 export class QuizAttempt extends Contract {
     constructor(owner, // Initially teacher, then student after exec
-        quizRef, answerCommitment, // Empty at creation, filled after purchase
-        entryFee, quizTeacher) {
+    quizRef, answerCommitment, // Empty at creation, filled after purchase
+    entryFee, quizTeacher) {
         if (!owner)
             throw new Error('Owner required');
         if (!quizRef)
@@ -15,17 +15,18 @@ export class QuizAttempt extends Contract {
         }
         if (!quizTeacher)
             throw new Error('Quiz teacher public key required');
+        const initialStatus = owner === quizTeacher ? 'available' : 'owned';
         super({
             _owners: [owner],
             _satoshis: BigInt(546), // Dust only
-            student: owner, // Will be updated after transfer
+            student: owner, // Will be updated after transfer in exec flow
             quizRef,
             answerCommitment,
             quizTeacher,
             entryFee,
             score: null,
             passed: null,
-            status: 'available', // NEW: Initial status for teacher-created attempts
+            status: initialStatus,
             submitTimestamp: Date.now(),
             claimedAt: null,
             version: '2.0.0' // Version bump for new flow

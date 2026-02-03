@@ -4,23 +4,6 @@
 // @ts-expect-error - Bitcoin Computer library type definitions issue
 import { Contract } from '@bitcoin-computer/lib';
 export class QuizAttempt extends Contract {
-    // Contract base properties
-    _id;
-    _rev;
-    _owners;
-    _satoshis;
-    // QuizAttempt properties
-    student;
-    quizRef;
-    answerCommitment;
-    quizTeacher;
-    entryFee;
-    score;
-    passed;
-    status; // 'available' | 'owned' | 'committed' | 'verified' | 'prize_claimed' | 'refunded'
-    submitTimestamp;
-    claimedAt;
-    version;
     constructor(owner, // Initially teacher, then student after exec
     quizRef, answerCommitment, // Empty at creation, filled after purchase
     entryFee, quizTeacher) {
@@ -34,17 +17,21 @@ export class QuizAttempt extends Contract {
         }
         if (!quizTeacher)
             throw new Error('Quiz teacher public key required');
+        // Determine initial status based on whether teacher or student is creating
+        // If owner === quizTeacher, then it's teacher-created (available for exec)
+        // If owner !== quizTeacher, then it's student-created (owned immediately)
+        const initialStatus = owner === quizTeacher ? 'available' : 'owned';
         super({
             _owners: [owner],
             _satoshis: BigInt(546), // Dust only
-            student: owner, // Will be updated after transfer
+            student: owner, // Will be updated after transfer in exec flow
             quizRef,
             answerCommitment,
             quizTeacher,
             entryFee,
             score: null,
             passed: null,
-            status: 'available', // NEW: Initial status for teacher-created attempts
+            status: initialStatus,
             submitTimestamp: Date.now(),
             claimedAt: null,
             version: '2.0.0' // Version bump for new flow
