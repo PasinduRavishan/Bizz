@@ -3,8 +3,8 @@
 // Edit the TypeScript file in src/QuizAttempt.ts instead
 
 export class QuizAttempt extends Contract {
-    constructor(owner, // Initially teacher, then student after exec
-    quizRef, answerCommitment, // Empty at creation, filled after purchase
+    constructor(owner, // Student who owns this attempt
+    quizRef, answerCommitment, // Empty at creation, filled after redemption
     entryFee, quizTeacher) {
         if (!owner)
             throw new Error('Owner required');
@@ -29,8 +29,8 @@ export class QuizAttempt extends Contract {
             status: initialStatus,
             submitTimestamp: Date.now(),
             claimedAt: null,
-            version: '2.0.0', // Version bump for new flow
-            isRedeemed: false // NEW: Default false - only true after redemption
+            version: '2.0.0',
+            isRedeemed: false // Default false - only true after quiz token redemption
         });
     }
     markAsRedeemed() {
@@ -49,7 +49,7 @@ export class QuizAttempt extends Contract {
             throw new Error('Must own attempt before submitting answers');
         }
         if (!this.isRedeemed) {
-            throw new Error('Must redeem seat token before submitting answers');
+            throw new Error('Must redeem quiz token before submitting answers');
         }
         if (!commitment) {
             throw new Error('Commitment required');

@@ -3,7 +3,6 @@
 // Edit the TypeScript file in src/AttemptAccess.ts instead
 
 export class AttemptAccess extends Contract {
-
     static exec(attempt, entryFeePayment) {
         const [teacher] = attempt._owners;
         const [student] = entryFeePayment._owners;

@@ -22,12 +22,12 @@ export class QuizAttempt extends Contract {
   declare submitTimestamp: number
   declare claimedAt: number | null
   declare version: string
-  declare isRedeemed: boolean  // NEW: Track if created via seat redemption
+  declare isRedeemed: boolean  // Track if created via quiz token redemption
 
   constructor(
-    owner: string,           // Initially teacher, then student after exec
+    owner: string,           // Student who owns this attempt
     quizRef: string,
-    answerCommitment: string,  // Empty at creation, filled after purchase
+    answerCommitment: string,  // Empty at creation, filled after redemption
     entryFee: bigint,
     quizTeacher: string
   ) {
@@ -58,11 +58,11 @@ export class QuizAttempt extends Contract {
       submitTimestamp: Date.now(),
       claimedAt: null,
       version: '2.0.0',
-      isRedeemed: false  // Default false - only true after redemption
+      isRedeemed: false  // Default false - only true after quiz token redemption
     })
   }
 
-  // NEW: Mark attempt as redeemed (called by SeatRedemption.redeem)
+  // Mark attempt as redeemed (called by QuizRedemption.redeem)
   markAsRedeemed(): void {
     if (this.isRedeemed) {
       throw new Error('Attempt already redeemed')
@@ -70,21 +70,21 @@ export class QuizAttempt extends Contract {
     this.isRedeemed = true
   }
 
-  // NEW: Transfer ownership (called by AttemptAccess.exec)
+  // Transfer ownership (if needed for future features)
   transfer(newOwner: string): void {
     this._owners = [newOwner]
     this.student = newOwner
     this.status = 'owned'
   }
 
-  // NEW: Student submits answers after purchasing attempt
+  // Student submits answers after redeeming quiz token
   submitCommitment(commitment: string): void {
     if (this.status !== 'owned') {
       throw new Error('Must own attempt before submitting answers')
     }
-    // ENFORCE: Must redeem seat before submitting answers
+    // ENFORCE: Must redeem quiz token before submitting answers
     if (!this.isRedeemed) {
-      throw new Error('Must redeem seat token before submitting answers')
+      throw new Error('Must redeem quiz token before submitting answers')
     }
     if (!commitment) {
       throw new Error('Commitment required')

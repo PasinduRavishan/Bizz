@@ -16,8 +16,8 @@ export declare class QuizAttempt extends Contract {
     claimedAt: number | null;
     version: string;
     isRedeemed: boolean;
-    constructor(owner: string, // Initially teacher, then student after exec
-    quizRef: string, answerCommitment: string, // Empty at creation, filled after purchase
+    constructor(owner: string, // Student who owns this attempt
+    quizRef: string, answerCommitment: string, // Empty at creation, filled after redemption
     entryFee: bigint, quizTeacher: string);
     markAsRedeemed(): void;
     transfer(newOwner: string): void;

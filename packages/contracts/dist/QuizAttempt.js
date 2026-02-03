@@ -4,8 +4,8 @@
 // @ts-expect-error - Bitcoin Computer library type definitions issue
 import { Contract } from '@bitcoin-computer/lib';
 export class QuizAttempt extends Contract {
-    constructor(owner, // Initially teacher, then student after exec
-    quizRef, answerCommitment, // Empty at creation, filled after purchase
+    constructor(owner, // Student who owns this attempt
+    quizRef, answerCommitment, // Empty at creation, filled after redemption
     entryFee, quizTeacher) {
         if (!owner)
             throw new Error('Owner required');
@@ -34,31 +34,31 @@ export class QuizAttempt extends Contract {
             status: initialStatus,
             submitTimestamp: Date.now(),
             claimedAt: null,
-            version: '2.0.0', // Version bump for new flow
-            isRedeemed: false // NEW: Default false - only true after redemption
+            version: '2.0.0',
+            isRedeemed: false // Default false - only true after quiz token redemption
         });
     }
-    // NEW: Mark attempt as redeemed (called by SeatRedemption.redeem)
+    // Mark attempt as redeemed (called by QuizRedemption.redeem)
     markAsRedeemed() {
         if (this.isRedeemed) {
             throw new Error('Attempt already redeemed');
         }
         this.isRedeemed = true;
     }
-    // NEW: Transfer ownership (called by AttemptAccess.exec)
+    // Transfer ownership (if needed for future features)
     transfer(newOwner) {
         this._owners = [newOwner];
         this.student = newOwner;
         this.status = 'owned';
     }
-    // NEW: Student submits answers after purchasing attempt
+    // Student submits answers after redeeming quiz token
     submitCommitment(commitment) {
         if (this.status !== 'owned') {
             throw new Error('Must own attempt before submitting answers');
         }
-        // ENFORCE: Must redeem seat before submitting answers
+        // ENFORCE: Must redeem quiz token before submitting answers
         if (!this.isRedeemed) {
-            throw new Error('Must redeem seat token before submitting answers');
+            throw new Error('Must redeem quiz token before submitting answers');
         }
         if (!commitment) {
             throw new Error('Commitment required');
@@ -67,7 +67,6 @@ export class QuizAttempt extends Contract {
         this.status = 'committed';
         this.submitTimestamp = Date.now();
     }
-    // REMOVED: reveal() method (no student reveal phase)
     // UPDATED: verify() now works from commitment only
     verify(score, passed) {
         if (this.status !== 'committed') {

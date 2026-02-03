@@ -24,44 +24,68 @@ const deployDir = join(contractsDir, 'deploy');
 mkdirSync(deployDir, { recursive: true });
 
 // List of contract files to process
-const contracts = ['Quiz', 'QuizAttempt', 'PrizeSwap', 'Payment', 'AnswerProof', 'SeatToken', 'SeatAccess', 'SeatRedemption'];
+const contracts = [
+  'Token',
+  'Payment',
+  'Quiz',
+  'QuizAttempt',
+  'QuizAccess',
+  'QuizRedemption',
+  'PrizeSwap',
+  'AnswerProof',
+  'SeatToken',
+  'SeatAccess',
+  'SeatRedemption',
+  'AttemptAccess'
+];
+
+// Helper function to process a contract file
+function processContract(contractName) {
+  const distPath = join(distDir, `${contractName}.js`);
+  let content = readFileSync(distPath, 'utf-8');
+
+  // Remove all import statements
+  content = content.replace(/^\s*import\s+.*?from\s+['"].*?['"];?\s*$/gm, '');
+
+  // Remove source map comments
+  content = content.replace(/^\/\/# sourceMappingURL=.*$/gm, '');
+
+  // Remove @ts-expect-error comments
+  content = content.replace(/^\s*\/\/\s*@ts-expect-error.*$/gm, '');
+
+  // Remove TypeScript version comments
+  content = content.replace(/^\s*\/\/\s*TypeScript version.*$/gm, '');
+  content = content.replace(/^\s*\/\/\s*Bitcoin Computer requires.*$/gm, '');
+  content = content.replace(/^\s*\/\/\s*For deployment.*$/gm, '');
+
+  // CRITICAL: Remove property declarations inside classes
+  content = content.replace(/^(\s+)([a-zA-Z_$][a-zA-Z0-9_$]*);$/gm, '');
+
+  // Remove comment lines (but keep comments inside code)
+  content = content.replace(/^\s*\/\/.*$/gm, '');
+
+  // Remove multiple consecutive empty lines
+  content = content.replace(/\n\n+/g, '\n\n');
+
+  // Remove empty lines at the beginning
+  content = content.replace(/^\s*\n/gm, '');
+
+  return content;
+}
 
 console.log('🔨 Building deployment files from TypeScript sources...\n');
 
 contracts.forEach(contractName => {
   try {
-    // Read the compiled JavaScript from dist/
-    const distPath = join(distDir, `${contractName}.js`);
-    let content = readFileSync(distPath, 'utf-8');
+    let content = processContract(contractName);
 
-    // Remove all import statements
-    content = content.replace(/^\s*import\s+.*?from\s+['"].*?['"];?\s*$/gm, '');
-
-    // Remove source map comments
-    content = content.replace(/^\/\/# sourceMappingURL=.*$/gm, '');
-
-    // Remove @ts-expect-error comments
-    content = content.replace(/^\s*\/\/\s*@ts-expect-error.*$/gm, '');
-
-    // Remove TypeScript version comments
-    content = content.replace(/^\s*\/\/\s*TypeScript version.*$/gm, '');
-    content = content.replace(/^\s*\/\/\s*Bitcoin Computer requires.*$/gm, '');
-    content = content.replace(/^\s*\/\/\s*For deployment.*$/gm, '');
-
-    // CRITICAL: Remove property declarations inside classes
-    // These are lines like: "    _id;" or "    teacher;" (with indentation)
-    // But NOT lines like: "this._id = ..." (assignments)
-    // Pattern: whitespace + identifier + semicolon + end of line
-    content = content.replace(/^(\s+)([a-zA-Z_$][a-zA-Z0-9_$]*);$/gm, '');
-
-    // Remove comment lines (but keep comments inside code)
-    content = content.replace(/^\s*\/\/.*$/gm, '');
-
-    // Remove multiple consecutive empty lines
-    content = content.replace(/\n\n+/g, '\n\n');
-
-    // Remove empty lines at the beginning
-    content = content.replace(/^\s*\n/gm, '');
+    // SPECIAL CASE: Quiz extends Token, so inline Token class
+    if (contractName === 'Quiz') {
+      const tokenContent = processContract('Token');
+      // Keep Token as exported so tests can import both Token and Quiz
+      // Combine Token + Quiz
+      content = tokenContent + '\n\n' + content;
+    }
 
     // Add header comment
     const header = `// Deployment-ready ${contractName} contract (no imports, Contract is available in Bitcoin Computer context)\n// Auto-generated from TypeScript source - DO NOT EDIT MANUALLY\n// Edit the TypeScript file in src/${contractName}.ts instead\n\n`;
