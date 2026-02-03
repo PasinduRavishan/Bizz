@@ -1,6 +1,4 @@
-// TypeScript version for local development (not used for deployment)
-// Bitcoin Computer requires JavaScript without imports
-// For deployment, use the JS version or strip types
+
 // @ts-expect-error - Bitcoin Computer library type definitions issue
 import { Contract } from '@bitcoin-computer/lib'
 

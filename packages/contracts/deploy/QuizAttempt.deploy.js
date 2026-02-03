@@ -29,8 +29,15 @@ export class QuizAttempt extends Contract {
             status: initialStatus,
             submitTimestamp: Date.now(),
             claimedAt: null,
-            version: '2.0.0' // Version bump for new flow
+            version: '2.0.0', // Version bump for new flow
+            isRedeemed: false // NEW: Default false - only true after redemption
         });
+    }
+    markAsRedeemed() {
+        if (this.isRedeemed) {
+            throw new Error('Attempt already redeemed');
+        }
+        this.isRedeemed = true;
     }
     transfer(newOwner) {
         this._owners = [newOwner];
@@ -40,6 +47,9 @@ export class QuizAttempt extends Contract {
     submitCommitment(commitment) {
         if (this.status !== 'owned') {
             throw new Error('Must own attempt before submitting answers');
+        }
+        if (!this.isRedeemed) {
+            throw new Error('Must redeem seat token before submitting answers');
         }
         if (!commitment) {
             throw new Error('Commitment required');

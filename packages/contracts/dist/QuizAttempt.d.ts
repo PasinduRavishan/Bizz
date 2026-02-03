@@ -15,9 +15,11 @@ export declare class QuizAttempt extends Contract {
     submitTimestamp: number;
     claimedAt: number | null;
     version: string;
+    isRedeemed: boolean;
     constructor(owner: string, // Initially teacher, then student after exec
     quizRef: string, answerCommitment: string, // Empty at creation, filled after purchase
     entryFee: bigint, quizTeacher: string);
+    markAsRedeemed(): void;
     transfer(newOwner: string): void;
     submitCommitment(commitment: string): void;
     verify(score: number, passed: boolean): void;

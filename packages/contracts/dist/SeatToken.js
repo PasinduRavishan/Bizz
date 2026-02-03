@@ -60,5 +60,15 @@ export class SeatToken extends Contract {
         // Create new UTXO for recipient
         return new SeatToken(recipient, amount, this.symbol, this.quizRef);
     }
+    /**
+     * Burn seat token by setting amount to 0
+     * Used when redeeming seat for quiz attempt
+     */
+    burn() {
+        if (this.amount !== 1n) {
+            throw new Error('Can only burn exactly 1 seat token');
+        }
+        this.amount = 0n;
+    }
 }
 //# sourceMappingURL=SeatToken.js.map

@@ -30,5 +30,10 @@ export declare class SeatToken extends Contract {
      * - Student: { amount: 1, owner: student } [NEW UTXO]
      */
     transfer(recipient: string, amount: bigint): SeatToken;
+    /**
+     * Burn seat token by setting amount to 0
+     * Used when redeeming seat for quiz attempt
+     */
+    burn(): void;
 }
 //# sourceMappingURL=SeatToken.d.ts.map

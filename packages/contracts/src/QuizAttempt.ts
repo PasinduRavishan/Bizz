@@ -22,6 +22,7 @@ export class QuizAttempt extends Contract {
   declare submitTimestamp: number
   declare claimedAt: number | null
   declare version: string
+  declare isRedeemed: boolean  // NEW: Track if created via seat redemption
 
   constructor(
     owner: string,           // Initially teacher, then student after exec
@@ -56,8 +57,17 @@ export class QuizAttempt extends Contract {
       status: initialStatus,
       submitTimestamp: Date.now(),
       claimedAt: null,
-      version: '2.0.0'  // Version bump for new flow
+      version: '2.0.0',
+      isRedeemed: false  // Default false - only true after redemption
     })
+  }
+
+  // NEW: Mark attempt as redeemed (called by SeatRedemption.redeem)
+  markAsRedeemed(): void {
+    if (this.isRedeemed) {
+      throw new Error('Attempt already redeemed')
+    }
+    this.isRedeemed = true
   }
 
   // NEW: Transfer ownership (called by AttemptAccess.exec)
@@ -72,6 +82,10 @@ export class QuizAttempt extends Contract {
     if (this.status !== 'owned') {
       throw new Error('Must own attempt before submitting answers')
     }
+    // ENFORCE: Must redeem seat before submitting answers
+    if (!this.isRedeemed) {
+      throw new Error('Must redeem seat token before submitting answers')
+    }
     if (!commitment) {
       throw new Error('Commitment required')
     }
@@ -81,7 +95,7 @@ export class QuizAttempt extends Contract {
     this.submitTimestamp = Date.now()
   }
 
-  // REMOVED: reveal() method (no student reveal phase)
+
 
   // UPDATED: verify() now works from commitment only
   verify(score: number, passed: boolean): void {

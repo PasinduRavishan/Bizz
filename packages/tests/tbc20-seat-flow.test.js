@@ -34,6 +34,7 @@ import { Quiz, Payment } from '@bizz/contracts/deploy/Quiz.deploy.js'
 import { QuizAttempt } from '@bizz/contracts/deploy/QuizAttempt.deploy.js'
 import { SeatToken } from '@bizz/contracts/deploy/SeatToken.deploy.js'
 import { SeatAccess } from '@bizz/contracts/deploy/SeatAccess.deploy.js'
+import { SeatRedemption } from '@bizz/contracts/deploy/SeatRedemption.deploy.js'
 import { AnswerProof } from '@bizz/contracts/deploy/AnswerProof.deploy.js'
 import { PrizeSwap } from '@bizz/contracts/deploy/PrizeSwap.deploy.js'
 
@@ -185,7 +186,7 @@ describe('🎓 TBC20 SEAT TOKEN FLOW - Fungible Tokens + On-Demand Attempts', fu
   let teacherPubKey, student1PubKey, student2PubKey, student3PubKey
 
   // Contract module specs
-  let quizModuleSpec, attemptModuleSpec, seatTokenModuleSpec, seatAccessModuleSpec, proofModuleSpec, swapModuleSpec
+  let quizModuleSpec, attemptModuleSpec, seatTokenModuleSpec, seatAccessModuleSpec, seatRedemptionModuleSpec, proofModuleSpec, swapModuleSpec
 
   // Test data
   const correctAnswers = ['Paris', '4', 'Blue']
@@ -298,6 +299,18 @@ describe('🎓 TBC20 SEAT TOKEN FLOW - Fungible Tokens + On-Demand Attempts', fu
       10
     )
     console.log(`    ✅ SeatAccess module deployed`)
+    await mineBlockFromRPCClient(teacherComputer)
+    await sleep(3000)
+    await mineBlockFromRPCClient(teacherComputer)
+    await sleep(3000)
+
+    seatRedemptionModuleSpec = await withRetry(
+      () => teacherComputer.deploy(`export ${SeatRedemption}`),
+      'Deploy SeatRedemption module',
+      teacherComputer,
+      10
+    )
+    console.log(`    ✅ SeatRedemption module deployed`)
     await mineBlockFromRPCClient(teacherComputer)
     await sleep(3000)
     await mineBlockFromRPCClient(teacherComputer)
@@ -563,12 +576,16 @@ describe('🎓 TBC20 SEAT TOKEN FLOW - Fungible Tokens + On-Demand Attempts', fu
       expect(student1BalanceAfter).to.be.lessThan(student1BalanceBefore)
     })
 
-    it('should allow student 1 to create quiz attempt after owning seat', async function () {
-      console.log('\n  📝 Student 1 creating QuizAttempt (on-demand)...')
+    it('should allow student 1 to redeem seat and create quiz attempt', async function () {
+      console.log('\n  🔥 Student 1 redeeming SEAT token to create QuizAttempt...')
 
       await mineBlockFromRPCClient(student1Computer)
 
-      // Student creates their own QuizAttempt since they own a seat
+      console.log(`\n    📊 Before redemption:`)
+      console.log(`      Student 1 SEAT balance: ${student1Seat.amount}`)
+
+      // STEP 1: Student creates QuizAttempt
+      console.log(`\n    📝 Step 1: Creating QuizAttempt...`)
       const { tx: attemptTx, effect: attemptEffect } = await withRetry(
         () => student1Computer.encode({
           mod: attemptModuleSpec,
@@ -579,14 +596,56 @@ describe('🎓 TBC20 SEAT TOKEN FLOW - Fungible Tokens + On-Demand Attempts', fu
       )
 
       await student1Computer.broadcast(attemptTx)
-      attempt1 = attemptEffect.res
+      const tempAttempt1 = attemptEffect.res
+
+      await sleep(3000)
+      console.log(`      ✅ QuizAttempt created: ${tempAttempt1._id.substring(0, 20)}...`)
+
+      // STEP 2: Student redeems their SEAT token (burns it and validates attempt)
+      console.log(`\n    🔥 Step 2: Redeeming SEAT token (burning it)...`)
+
+      // Sync latest seat token
+      const [latestSeatRev] = await student1Computer.query({ ids: [student1Seat._id] })
+      const syncedSeat = await student1Computer.sync(latestSeatRev)
+
+      // Sync latest attempt
+      const [latestAttemptRev] = await student1Computer.query({ ids: [tempAttempt1._id] })
+      const syncedAttempt = await student1Computer.sync(latestAttemptRev)
+
+      const { tx: redeemTx, effect: redeemEffect } = await withRetry(
+        () => student1Computer.encode({
+          exp: `${SeatRedemption} SeatRedemption.redeem(seatToken, quizAttempt)`,
+          env: {
+            seatToken: syncedSeat._rev,
+            quizAttempt: syncedAttempt._rev
+          },
+          mod: seatRedemptionModuleSpec
+        }),
+        'Redeem seat token',
+        student1Computer
+      )
+
+      await withRetry(
+        () => student1Computer.broadcast(redeemTx),
+        'Broadcast redemption',
+        student1Computer
+      )
+
+      const [burnedSeat, validatedAttempt] = redeemEffect.res
+      attempt1 = validatedAttempt
 
       await sleep(3000)
 
-      console.log(`    ✅ QuizAttempt created: ${attempt1._id.substring(0, 20)}...`)
-      console.log(`    ✅ Status: ${attempt1.status}`)
-      console.log(`    ✅ Owner: ${attempt1._owners[0] === student1PubKey ? 'Student 1 ✅' : 'NOT STUDENT ❌'}`)
+      // Query the burned seat to verify
+      const [burnedSeatRev] = await student1Computer.query({ ids: [student1Seat._id] })
+      const finalSeat = await student1Computer.sync(burnedSeatRev)
 
+      console.log(`\n    📊 After redemption:`)
+      console.log(`      SEAT token amount: ${finalSeat.amount} (BURNED! ✅)`)
+      console.log(`      QuizAttempt status: ${attempt1.status}`)
+      console.log(`      QuizAttempt owner: ${attempt1._owners[0] === student1PubKey ? 'Student 1 ✅' : 'NOT STUDENT ❌'}`)
+
+      expect(finalSeat.amount).to.equal(0n) // SEAT is burned
       expect(attempt1.status).to.equal('owned')
       expect(attempt1._owners[0]).to.equal(student1PubKey)
       expect(attempt1.student).to.equal(student1PubKey)
@@ -700,16 +759,35 @@ describe('🎓 TBC20 SEAT TOKEN FLOW - Fungible Tokens + On-Demand Attempts', fu
       }
       console.log(`    ✅ Student 2 received SEAT token (amount: ${student2Seat.amount})`)
 
-      // Student 2 creates QuizAttempt
+      // Student 2 creates QuizAttempt and redeems seat
       await mineBlockFromRPCClient(student2Computer)
       const { tx: attempt2Tx, effect: attempt2Effect } = await student2Computer.encode({
         mod: attemptModuleSpec,
         exp: `new QuizAttempt("${student2PubKey}", "${quizId}", "", BigInt(${entryFee}), "${teacherPubKey}")`
       })
       await student2Computer.broadcast(attempt2Tx)
-      attempt2 = attempt2Effect.res
+      const tempAttempt2 = attempt2Effect.res
       await sleep(3000)
-      console.log(`    ✅ Student 2 created QuizAttempt (status: ${attempt2.status})`)
+
+      // Redeem seat (burn it)
+      const [seat2Rev] = await student2Computer.query({ ids: [student2Seat._id] })
+      const syncedSeat2 = await student2Computer.sync(seat2Rev)
+      const [attempt2Rev] = await student2Computer.query({ ids: [tempAttempt2._id] })
+      const syncedAttempt2 = await student2Computer.sync(attempt2Rev)
+
+      const { tx: redeem2Tx, effect: redeem2Effect } = await student2Computer.encode({
+        exp: `${SeatRedemption} SeatRedemption.redeem(seatToken, quizAttempt)`,
+        env: {
+          seatToken: syncedSeat2._rev,
+          quizAttempt: syncedAttempt2._rev
+        },
+        mod: seatRedemptionModuleSpec
+      })
+      await student2Computer.broadcast(redeem2Tx)
+      const [, validatedAttempt2] = redeem2Effect.res
+      attempt2 = validatedAttempt2
+      await sleep(3000)
+      console.log(`    ✅ Student 2 redeemed seat and created QuizAttempt (status: ${attempt2.status})`)
 
       // Student 2 submit answers
       await mineBlockFromRPCClient(student2Computer)
@@ -793,16 +871,35 @@ describe('🎓 TBC20 SEAT TOKEN FLOW - Fungible Tokens + On-Demand Attempts', fu
       }
       console.log(`    ✅ Student 3 received SEAT token (amount: ${student3Seat.amount})`)
 
-      // Student 3 creates QuizAttempt
+      // Student 3 creates QuizAttempt and redeems seat
       await mineBlockFromRPCClient(student3Computer)
       const { tx: attempt3Tx, effect: attempt3Effect } = await student3Computer.encode({
         mod: attemptModuleSpec,
         exp: `new QuizAttempt("${student3PubKey}", "${quizId}", "", BigInt(${entryFee}), "${teacherPubKey}")`
       })
       await student3Computer.broadcast(attempt3Tx)
-      attempt3 = attempt3Effect.res
+      const tempAttempt3 = attempt3Effect.res
       await sleep(3000)
-      console.log(`    ✅ Student 3 created QuizAttempt (status: ${attempt3.status})`)
+
+      // Redeem seat (burn it)
+      const [seat3Rev] = await student3Computer.query({ ids: [student3Seat._id] })
+      const syncedSeat3 = await student3Computer.sync(seat3Rev)
+      const [attempt3Rev] = await student3Computer.query({ ids: [tempAttempt3._id] })
+      const syncedAttempt3 = await student3Computer.sync(attempt3Rev)
+
+      const { tx: redeem3Tx, effect: redeem3Effect } = await student3Computer.encode({
+        exp: `${SeatRedemption} SeatRedemption.redeem(seatToken, quizAttempt)`,
+        env: {
+          seatToken: syncedSeat3._rev,
+          quizAttempt: syncedAttempt3._rev
+        },
+        mod: seatRedemptionModuleSpec
+      })
+      await student3Computer.broadcast(redeem3Tx)
+      const [, validatedAttempt3] = redeem3Effect.res
+      attempt3 = validatedAttempt3
+      await sleep(3000)
+      console.log(`    ✅ Student 3 redeemed seat and created QuizAttempt (status: ${attempt3.status})`)
 
       // Student 3 submit answers
       await mineBlockFromRPCClient(student3Computer)

@@ -4,17 +4,7 @@
 // @ts-expect-error - Bitcoin Computer library type definitions issue
 import { Contract } from '@bitcoin-computer/lib'
 
-/**
- * SeatToken - TBC20 Fungible Token for Quiz Seats
- *
- * Represents available quiz attempt slots that can be purchased by students.
- * Uses the TBC20 pattern (like ERC20) where tokens can be split and transferred.
- *
- * Flow:
- * 1. Teacher mints N seat tokens (e.g., 100 seats for the quiz)
- * 2. Students purchase seats via exec pattern (atomic swap: payment for seat)
- * 3. Students redeem seats to receive QuizAttempt NFTs
- */
+
 export class SeatToken extends Contract {
   amount!: bigint
   symbol!: string
@@ -35,19 +25,7 @@ export class SeatToken extends Contract {
     })
   }
 
-  /**
-   * Transfer seat tokens to another user
-   *
-   * This follows the TBC20 pattern:
-   * - Reduces THIS utxo's amount
-   * - Creates NEW utxo for recipient with specified amount
-   *
-   * Example:
-   * Teacher has: { amount: 100, owner: teacher }
-   * After transfer(student, 1):
-   * - Teacher: { amount: 99, owner: teacher }
-   * - Student: { amount: 1, owner: student } [NEW UTXO]
-   */
+
   transfer(recipient: string, amount: bigint): SeatToken {
     if (!recipient) throw new Error('Recipient required')
     if (amount <= 0n) throw new Error('Amount must be positive')
@@ -58,5 +36,13 @@ export class SeatToken extends Contract {
 
     // Create new UTXO for recipient
     return new SeatToken(recipient, amount, this.symbol, this.quizRef)
+  }
+
+
+  burn(): void {
+    if (this.amount !== 1n) {
+      throw new Error('Can only burn exactly 1 seat token')
+    }
+    this.amount = 0n
   }
 }
