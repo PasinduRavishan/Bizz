@@ -113,9 +113,33 @@ export class Quiz extends Token {
         });
     }
     /**
+     * Mint new quiz tokens (TBC20 on-demand minting)
+     * Creates NEW quiz tokens for recipient without reducing teacher's balance
+     * This is true on-demand minting - teacher creates quiz tokens when student requests
+     *
+     * @param to - Recipient's public key (student)
+     * @param amount - Amount to mint (usually 1)
+     * @returns New Quiz token UTXO for recipient
+     */
+    mint(to, amount) {
+        if (!to)
+            throw new Error('Recipient required');
+        if (amount <= 0n)
+            throw new Error('Amount must be positive');
+        // Determine originalQuizId: use existing one or this._id for first mint
+        const quizId = this.originalQuizId || this._id;
+        // Create new Quiz token UTXO for recipient (true on-demand minting)
+        // Pass all quiz metadata INCLUDING originalQuizId and teacher to the new token
+        // NOTE: Teacher's balance does NOT decrease - this is minting, not transferring
+        return new Quiz(to, // Recipient becomes the new owner
+        amount, this.symbol, this.teacher, // Preserve original teacher (metadata)
+        this.questionHashIPFS, this.answerHashes, this.prizePool, this.entryFee, this.passThreshold, this.deadline, this.teacherRevealDeadline, quizId // Preserve original quiz ID
+        );
+    }
+    /**
      * Transfer quiz tokens to recipient (TBC20 pattern)
      * Creates new UTXO for recipient, reduces this token's amount
-     * This enables on-demand minting: teacher can mint and distribute quiz tokens
+     * This is for splitting existing tokens, not minting new ones
      *
      * @param recipient - Recipient's public key
      * @param amount - Amount to transfer
@@ -132,7 +156,7 @@ export class Quiz extends Token {
         this.amount -= amount;
         // Determine originalQuizId: use existing one or this._id for first transfer
         const quizId = this.originalQuizId || this._id;
-        // Create new Quiz token UTXO for recipient (on-demand minting pattern)
+        // Create new Quiz token UTXO for recipient (transfer pattern)
         // Pass all quiz metadata INCLUDING originalQuizId and teacher to the new token
         return new Quiz(recipient, // Recipient becomes the new owner
         amount, this.symbol, this.teacher, // Preserve original teacher (metadata)

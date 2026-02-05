@@ -5,8 +5,8 @@
 /**
  * QuizAccess - Atomic Quiz Purchase (EXEC Pattern)
  *
- * Enables atomic swap:
- * - Teacher gives Quiz fungible token (1 quiz token)
+ * Enables atomic swap with on-demand minting:
+ * - Teacher mints 1 Quiz token for student (on-demand, no pre-existing supply needed)
  * - Student pays entry fee (Payment contract)
  *
  * Uses SIGHASH_SINGLE | SIGHASH_ANYONECANPAY for partial signing:
@@ -15,26 +15,23 @@
  * 3. Student creates real Payment
  * 4. Student updates transaction with real payment UTXO
  * 5. Student funds, signs, and broadcasts
- * 6. Atomic execution: both transfers happen or neither happens
+ * 6. Atomic execution: mint + payment happen atomically
  *
  * Result:
- * - Student receives 1 Quiz token
+ * - Student receives 1 freshly minted Quiz token
  * - Teacher receives entry fee Payment
  */
 export class QuizAccess extends Contract {
     /**
-     * Execute atomic quiz purchase
+     * Execute atomic quiz purchase with on-demand minting
      *
-     * @param quizToken - Teacher's Quiz fungible token
+     * @param quizToken - Teacher's Quiz token (used as template for minting)
      * @param entryFeePayment - Student's entry fee Payment
-     * @returns [Payment to teacher, Quiz token to student]
+     * @returns [Payment to teacher, Minted Quiz token for student]
      */
     static exec(quizToken, entryFeePayment) {
         const [teacher] = quizToken._owners;
         const [student] = entryFeePayment._owners;
-        if (quizToken.amount < 1n) {
-            throw new Error('No available quiz tokens');
-        }
         if (entryFeePayment.recipient !== teacher) {
             throw new Error('Entry fee must be paid to teacher');
         }
@@ -45,7 +42,7 @@ export class QuizAccess extends Contract {
             throw new Error('Payment amount must match quiz entry fee');
         }
         entryFeePayment.transfer(teacher);
-        const studentQuiz = quizToken.transfer(student, 1n);
+        const studentQuiz = quizToken.mint(student, 1n);
         return [entryFeePayment, studentQuiz];
     }
 }

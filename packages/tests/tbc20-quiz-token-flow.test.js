@@ -4,15 +4,16 @@
  *
  * ARCHITECTURAL CHANGE: Quiz itself is now the fungible token!
  *
- * PHASE 1: Quiz Fungible Token Creation & Minting (TBC20)
- *   - Teacher creates Quiz as fungible token (initial supply)
+ * PHASE 1: Quiz Fungible Token Creation (TBC20)
+ *   - Teacher creates Quiz as fungible token (template, amount=1)
  *   - Quiz extends Token extends Contract
  *   - Quiz contains all metadata (questions, entry fee, prize pool, etc.)
  *
- * PHASE 2: Quiz Token Purchase (TBC20 + EXEC)
- *   - Students buy quiz tokens via exec pattern
- *   - TBC20 transfer splits: teacher's supply reduces, student gets new UTXO
- *   - Entry fee paid atomically
+ * PHASE 2: Quiz Token Purchase (TBC20 mint() + EXEC)
+ *   - Student requests quiz access from teacher
+ *   - Teacher mints 1 quiz token for student via QuizAccess.exec() (on-demand)
+ *   - mint() creates brand new token - teacher's template balance stays unchanged
+ *   - Entry fee paid atomically via SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
  *
  * PHASE 3: Quiz Token Redemption & Attempt Creation
  *   - Students redeem quiz token → creates QuizAttempt
@@ -200,7 +201,7 @@ describe('🎓 TBC20 QUIZ FUNGIBLE TOKEN FLOW - Quiz as Token + On-Demand Mintin
   const entryFee = BigInt(5000)  // 5,000 sats
   const prizePool = BigInt(50000) // 50,000 sats
   const passThreshold = 70
-  const initialQuizSupply = 100n  // Teacher mints 100 quiz tokens initially
+  const initialQuizSupply = 1n  // Quiz contract itself needs 1 token to exist on-chain; mint() creates new tokens on-demand
 
   // Quiz fungible token data
   let quiz  // Teacher's quiz fungible token UTXO
@@ -377,7 +378,7 @@ describe('🎓 TBC20 QUIZ FUNGIBLE TOKEN FLOW - Quiz as Token + On-Demand Mintin
 
       console.log(`    ✅ Quiz fungible token created: ${quizId.substring(0, 20)}...`)
       console.log(`    ✅ Symbol: ${quiz.symbol}`)
-      console.log(`    ✅ Initial supply: ${quiz.amount}`)
+      console.log(`    ✅ Template amount: ${quiz.amount} (mint() creates new tokens on-demand)`)
       console.log(`    ✅ Status: ${quiz.status}`)
       console.log(`    ✅ Entry fee (metadata): ${quiz.entryFee.toLocaleString()} sats`)
       console.log(`    ✅ Prize pool (metadata): ${quiz.prizePool.toLocaleString()} sats`)
@@ -401,7 +402,7 @@ describe('🎓 TBC20 QUIZ FUNGIBLE TOKEN FLOW - Quiz as Token + On-Demand Mintin
       const teacherBalanceBefore = (await teacherComputer.getBalance()).balance
 
       console.log(`\n    📊 Before purchase:`)
-      console.log(`      Teacher's Quiz token balance: ${quiz.amount}`)
+      console.log(`      Teacher's Quiz template amount: ${quiz.amount} (will stay same after mint)`)
 
       // STEP 1: Teacher creates mock payment and partially signed exec transaction
       console.log('\n    📝 Step 1: Teacher creating partially signed exec transaction...')
@@ -493,15 +494,16 @@ describe('🎓 TBC20 QUIZ FUNGIBLE TOKEN FLOW - Quiz as Token + On-Demand Mintin
       const student1BalanceAfter = (await student1Computer.getBalance()).balance
       const teacherBalanceAfter = (await teacherComputer.getBalance()).balance
 
-      console.log(`\n    📊 After purchase (TBC20 split):`)
-      console.log(`      Teacher's Quiz balance: ${quiz.amount} (reduced by 1)`)
-      console.log(`      Student 1 Quiz token: ${student1Quiz ? student1Quiz.amount : 'NOT FOUND'}`)
+      console.log(`\n    📊 After purchase (TBC20 on-demand mint):`)
+      console.log(`      Teacher's Quiz balance: ${quiz.amount} (unchanged - mint does not reduce)`)
+      console.log(`      Student 1 Quiz token: ${student1Quiz ? student1Quiz.amount : 'NOT FOUND'} (freshly minted)`)
       console.log(`      Student 1 Quiz owner: ${student1Quiz ? (student1Quiz._owners[0] === student1PubKey ? 'Student 1 ✅' : 'NOT STUDENT ❌') : 'N/A'}`)
 
       displayBalanceChange('Student 1 Balance', student1BalanceBefore, student1BalanceAfter)
       displayBalanceChange('Teacher Balance', teacherBalanceBefore, teacherBalanceAfter)
 
-      expect(quiz.amount).to.equal(99n)
+      // With mint(), teacher's quiz amount stays at 1 (the template token)
+      expect(quiz.amount).to.equal(1n)
       expect(student1Quiz).to.not.be.undefined
       expect(student1Quiz.amount).to.equal(1n)
       expect(student1Quiz._owners[0]).to.equal(student1PubKey)
@@ -839,19 +841,20 @@ describe('🎓 TBC20 QUIZ FUNGIBLE TOKEN FLOW - Quiz as Token + On-Demand Mintin
       console.log(`    ✅ Quiz extends Token extends Contract`)
       console.log(`    ✅ Quiz IS a fungible token (not separate seat tokens)`)
       console.log(`    ✅ Quiz contains all metadata (questions, entry fee, prize pool)`)
-      console.log(`    ✅ On-demand minting via TBC20 transfer pattern`)
+      console.log(`    ✅ True on-demand minting via TBC20 mint() method`)
 
       console.log('\n  🔄 Flow:')
-      console.log(`    1️⃣ Teacher creates Quiz fungible token (initial supply: ${initialQuizSupply})`)
-      console.log(`    2️⃣ Student purchases Quiz token via exec (entry fee: ${entryFee} sats)`)
-      console.log(`    3️⃣ QuizAccess.exec() atomically swaps quiz token for payment`)
-      console.log(`    4️⃣ Student redeems Quiz token → creates QuizAttempt (burns quiz token)`)
-      console.log(`    5️⃣ Student submits answers (enforced after redemption)`)
-      console.log(`    6️⃣ Teacher reveals, scores, distributes prizes (same as before)`)
+      console.log(`    1️⃣ Teacher creates Quiz token (template, amount=1)`)
+      console.log(`    2️⃣ Student requests quiz access`)
+      console.log(`    3️⃣ Teacher mints 1 quiz token for student via QuizAccess.exec() (on-demand)`)
+      console.log(`    4️⃣ Student pays entry fee atomically (${entryFee} sats)`)
+      console.log(`    5️⃣ Student redeems Quiz token → creates QuizAttempt (burns quiz token)`)
+      console.log(`    6️⃣ Student submits answers (enforced after redemption)`)
+      console.log(`    7️⃣ Teacher reveals, scores, distributes prizes`)
 
       console.log(`\n  📊 Current State:`)
-      console.log(`    Teacher's Quiz supply: ${quiz.amount} tokens`)
-      console.log(`    Student 1 has: QuizAttempt (quiz token burned)`)
+      console.log(`    Teacher's Quiz template: ${quiz.amount} token (unchanged by minting)`)
+      console.log(`    Student 1 has: QuizAttempt (minted quiz token burned after redemption)`)
       console.log(`    Student 1 status: ${attempt1.status}`)
 
       console.log('\n' + '='.repeat(80))

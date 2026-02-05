@@ -6,6 +6,7 @@ interface Quiz extends Contract {
     symbol: string;
     teacher: string;
     entryFee: bigint;
+    mint(to: string, amount: bigint): Quiz;
     transfer(recipient: string, amount: bigint): Quiz;
 }
 interface Payment extends Contract {
@@ -21,8 +22,8 @@ interface Payment extends Contract {
 /**
  * QuizAccess - Atomic Quiz Purchase (EXEC Pattern)
  *
- * Enables atomic swap:
- * - Teacher gives Quiz fungible token (1 quiz token)
+ * Enables atomic swap with on-demand minting:
+ * - Teacher mints 1 Quiz token for student (on-demand, no pre-existing supply needed)
  * - Student pays entry fee (Payment contract)
  *
  * Uses SIGHASH_SINGLE | SIGHASH_ANYONECANPAY for partial signing:
@@ -31,19 +32,19 @@ interface Payment extends Contract {
  * 3. Student creates real Payment
  * 4. Student updates transaction with real payment UTXO
  * 5. Student funds, signs, and broadcasts
- * 6. Atomic execution: both transfers happen or neither happens
+ * 6. Atomic execution: mint + payment happen atomically
  *
  * Result:
- * - Student receives 1 Quiz token
+ * - Student receives 1 freshly minted Quiz token
  * - Teacher receives entry fee Payment
  */
 export declare class QuizAccess extends Contract {
     /**
-     * Execute atomic quiz purchase
+     * Execute atomic quiz purchase with on-demand minting
      *
-     * @param quizToken - Teacher's Quiz fungible token
+     * @param quizToken - Teacher's Quiz token (used as template for minting)
      * @param entryFeePayment - Student's entry fee Payment
-     * @returns [Payment to teacher, Quiz token to student]
+     * @returns [Payment to teacher, Minted Quiz token for student]
      */
     static exec(quizToken: Quiz, entryFeePayment: Payment): [Payment, Quiz];
 }

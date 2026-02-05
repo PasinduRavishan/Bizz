@@ -65,9 +65,19 @@ export declare class Quiz extends Token {
      */
     constructor(to: string, initialSupply: bigint, symbol: string, teacher: string, questionHashIPFS: string, answerHashes: string[], prizePool: bigint, entryFee: bigint, passThreshold: number, deadline: number, teacherRevealDeadline?: number | null, originalQuizId?: string);
     /**
+     * Mint new quiz tokens (TBC20 on-demand minting)
+     * Creates NEW quiz tokens for recipient without reducing teacher's balance
+     * This is true on-demand minting - teacher creates quiz tokens when student requests
+     *
+     * @param to - Recipient's public key (student)
+     * @param amount - Amount to mint (usually 1)
+     * @returns New Quiz token UTXO for recipient
+     */
+    mint(to: string, amount: bigint): Quiz;
+    /**
      * Transfer quiz tokens to recipient (TBC20 pattern)
      * Creates new UTXO for recipient, reduces this token's amount
-     * This enables on-demand minting: teacher can mint and distribute quiz tokens
+     * This is for splitting existing tokens, not minting new ones
      *
      * @param recipient - Recipient's public key
      * @param amount - Amount to transfer

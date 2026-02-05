@@ -31,6 +31,24 @@ export class Token extends Contract {
         });
     }
     /**
+     * Mint new tokens (TBC20 standard)
+     * Creates NEW tokens for recipient without reducing sender's balance
+     * This is true on-demand minting - creates tokens from nothing
+     * MUST be overridden by subclass to return correct type
+     *
+     * @param to - Recipient's public key
+     * @param amount - Amount to mint
+     * @returns New token UTXO for recipient
+     */
+    mint(to, amount) {
+        if (!to)
+            throw new Error('Recipient required');
+        if (amount <= 0n)
+            throw new Error('Amount must be positive');
+        // Subclass MUST override this to create proper token type
+        throw new Error('mint() must be implemented by subclass');
+    }
+    /**
      * Transfer tokens to recipient (TBC20 standard)
      * Creates new UTXO for recipient, reduces this token's amount
      * MUST be overridden by subclass to return correct type

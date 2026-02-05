@@ -10,11 +10,11 @@ import { Contract } from '@bitcoin-computer/lib'
  * Based on Bitcoin Computer monorepo examples
  */
 export interface ITBC20 {
-  mint?(to: string, amount: bigint): Promise<Token>
-  totalSupply?(): bigint
-  balanceOf?(): bigint
+  mint(to: string, amount: bigint): Token
+  totalSupply(): bigint
+  balanceOf(): bigint
   transfer(recipient: string, amount: bigint): Token
-  burn?(): void
+  burn(): void
 }
 
 /**
@@ -42,6 +42,24 @@ export class Token extends Contract implements ITBC20 {
       symbol,
       ...additionalProps
     })
+  }
+
+  /**
+   * Mint new tokens (TBC20 standard)
+   * Creates NEW tokens for recipient without reducing sender's balance
+   * This is true on-demand minting - creates tokens from nothing
+   * MUST be overridden by subclass to return correct type
+   *
+   * @param to - Recipient's public key
+   * @param amount - Amount to mint
+   * @returns New token UTXO for recipient
+   */
+  mint(to: string, amount: bigint): Token {
+    if (!to) throw new Error('Recipient required')
+    if (amount <= 0n) throw new Error('Amount must be positive')
+
+    // Subclass MUST override this to create proper token type
+    throw new Error('mint() must be implemented by subclass')
   }
 
   /**

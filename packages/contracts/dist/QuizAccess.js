@@ -6,8 +6,8 @@ import { Contract } from '@bitcoin-computer/lib';
 /**
  * QuizAccess - Atomic Quiz Purchase (EXEC Pattern)
  *
- * Enables atomic swap:
- * - Teacher gives Quiz fungible token (1 quiz token)
+ * Enables atomic swap with on-demand minting:
+ * - Teacher mints 1 Quiz token for student (on-demand, no pre-existing supply needed)
  * - Student pays entry fee (Payment contract)
  *
  * Uses SIGHASH_SINGLE | SIGHASH_ANYONECANPAY for partial signing:
@@ -16,27 +16,23 @@ import { Contract } from '@bitcoin-computer/lib';
  * 3. Student creates real Payment
  * 4. Student updates transaction with real payment UTXO
  * 5. Student funds, signs, and broadcasts
- * 6. Atomic execution: both transfers happen or neither happens
+ * 6. Atomic execution: mint + payment happen atomically
  *
  * Result:
- * - Student receives 1 Quiz token
+ * - Student receives 1 freshly minted Quiz token
  * - Teacher receives entry fee Payment
  */
 export class QuizAccess extends Contract {
     /**
-     * Execute atomic quiz purchase
+     * Execute atomic quiz purchase with on-demand minting
      *
-     * @param quizToken - Teacher's Quiz fungible token
+     * @param quizToken - Teacher's Quiz token (used as template for minting)
      * @param entryFeePayment - Student's entry fee Payment
-     * @returns [Payment to teacher, Quiz token to student]
+     * @returns [Payment to teacher, Minted Quiz token for student]
      */
     static exec(quizToken, entryFeePayment) {
         const [teacher] = quizToken._owners;
         const [student] = entryFeePayment._owners;
-        // Validation: Check quiz token has available balance
-        if (quizToken.amount < 1n) {
-            throw new Error('No available quiz tokens');
-        }
         // Validation: Check payment is addressed to teacher
         if (entryFeePayment.recipient !== teacher) {
             throw new Error('Entry fee must be paid to teacher');
@@ -52,13 +48,13 @@ export class QuizAccess extends Contract {
         // Atomic execution (following TBC20 Sale.exec pattern):
         // 1. Transfer entry fee payment to teacher
         entryFeePayment.transfer(teacher);
-        // 2. Split quiz token using TBC20 pattern
-        // This is the CRITICAL part - quizToken.transfer() returns NEW UTXO
-        // and modifies the original quizToken's amount
-        const studentQuiz = quizToken.transfer(student, 1n);
+        // 2. Mint new quiz token for student (on-demand minting)
+        // quizToken.mint() creates a brand new token UTXO for the student
+        // Teacher's quiz token is used as template - its balance does NOT decrease
+        const studentQuiz = quizToken.mint(student, 1n);
         // Return both modified contracts
         // entryFeePayment: now owned by teacher
-        // studentQuiz: new UTXO with 1 quiz token, owned by student
+        // studentQuiz: freshly minted UTXO with 1 quiz token, owned by student
         return [entryFeePayment, studentQuiz];
     }
 }
