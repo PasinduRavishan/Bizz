@@ -20,6 +20,6 @@ export { AnswerProof } from './AnswerProof'
 
 // Legacy seat token exports (keep for backward compatibility)
 export { AttemptAccess } from './AttemptAccess'
-export { SeatAccess } from './SeatAccess'
-export { SeatRedemption } from './SeatRedemption'
-export { SeatToken } from './SeatToken'
+// export { SeatAccess } from './SeatAccess'
+// export { SeatRedemption } from './SeatRedemption'
+// export { SeatToken } from './SeatToken'

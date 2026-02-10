@@ -129,4 +129,25 @@ export declare class Quiz extends Token {
         isExpired: boolean;
     };
 }
+export declare class QuizHelper {
+    computer: any;
+    mod?: string;
+    constructor(computer: any, mod?: string);
+    deploy(Token: any, Quiz: any): Promise<string | undefined>;
+    createQuiz(params: {
+        teacherPubKey: string;
+        initialSupply: bigint;
+        symbol: string;
+        questionHashIPFS: string;
+        answerHashes: string[];
+        prizePool: bigint;
+        entryFee: bigint;
+        passThreshold: number;
+        deadline: number;
+        teacherRevealDeadline: number;
+    }): Promise<{
+        tx: any;
+        effect: any;
+    }>;
+}
 //# sourceMappingURL=Quiz.d.ts.map

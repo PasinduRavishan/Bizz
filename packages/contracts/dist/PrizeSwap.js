@@ -43,4 +43,44 @@ export class PrizeSwap extends Contract {
         return [prizePayment, answerProof, attempt];
     }
 }
+// ============================================================================
+// HELPER FUNCTIONS
+// Pattern: Bitcoin Computer monorepo - helpers outside class in same file
+// ============================================================================
+/**
+ * Deploy PrizeSwap module
+ */
+export async function deployPrizeSwapModule(computer, PrizeSwap) {
+    return await computer.deploy(`export ${PrizeSwap}`);
+}
+// ============================================================================
+// HELPER CLASS
+// Pattern: Bitcoin Computer monorepo - Helper class with computer instance
+// ============================================================================
+export class PrizeSwapHelper {
+    computer;
+    mod;
+    constructor(computer, mod) {
+        this.computer = computer;
+        this.mod = mod;
+    }
+    async deploy() {
+        this.mod = await this.computer.deploy(`export ${PrizeSwap}`);
+        return this.mod;
+    }
+    createPrizeSwapTx(prizePayment, answerProof, attempt, sighashType) {
+        return this.computer.encode({
+            exp: `${PrizeSwap} PrizeSwap.swap(prizePayment, answerProof, attempt)`,
+            env: {
+                prizePayment: prizePayment._rev,
+                answerProof: answerProof._rev,
+                attempt: attempt._rev
+            },
+            mod: this.mod,
+            fund: false,
+            sign: true,
+            sighashType
+        });
+    }
+}
 //# sourceMappingURL=PrizeSwap.js.map

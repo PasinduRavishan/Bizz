@@ -24,4 +24,21 @@ export declare class AnswerProof extends Contract {
         createdAt: number;
     };
 }
+export declare class AnswerProofHelper {
+    computer: any;
+    mod?: string;
+    constructor(computer: any, mod?: string);
+    deploy(): Promise<string | undefined>;
+    createAnswerProof(params: {
+        student: string;
+        quizRef: string;
+        attemptRef: string;
+        answers: string[];
+        score: number;
+        passed: boolean;
+    }): Promise<{
+        tx: any;
+        effect: any;
+    }>;
+}
 //# sourceMappingURL=AnswerProof.d.ts.map

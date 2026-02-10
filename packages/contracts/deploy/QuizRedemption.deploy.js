@@ -59,3 +59,24 @@ export class QuizRedemption extends Contract {
         return [quizToken, quizAttempt];
     }
 }
+export class QuizRedemptionHelper {
+    constructor(computer, mod) {
+        this.computer = computer;
+        this.mod = mod;
+    }
+    async deploy() {
+        this.mod = await this.computer.deploy(`export ${QuizRedemption}`);
+        return this.mod;
+    }
+    async redeemQuizToken(quizToken, quizAttempt) {
+        const { tx, effect } = await this.computer.encode({
+            exp: `${QuizRedemption} QuizRedemption.redeem(quizToken, quizAttempt)`,
+            env: {
+                quizToken: quizToken._rev,
+                quizAttempt: quizAttempt._rev
+            },
+            mod: this.mod
+        });
+        return { tx, effect };
+    }
+}

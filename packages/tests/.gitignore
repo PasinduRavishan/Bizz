@@ -1,0 +1,32 @@
+# Build output
+dist/
+
+# Compiled files in source directory (cleanup old pattern)
+/*.js
+/*.d.ts
+/*.js.map
+/helpers/*.js
+/helpers/*.d.ts
+/helpers/*.js.map
+
+# Environment files
+.env.local
+.env
+
+# Node modules
+node_modules/
+
+# Test reports
+coverage/
+.nyc_output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

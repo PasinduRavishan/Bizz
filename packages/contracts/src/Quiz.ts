@@ -90,23 +90,6 @@ export class Quiz extends Token {
     teacherRevealDeadline: number | null = null,
     originalQuizId: string = ''
   ) {
-    // Validation
-    if (!to) throw new Error('Owner required')
-    if (!teacher) throw new Error('Teacher public key required')
-    if (!questionHashIPFS) throw new Error('Question hash required')
-    if (!Array.isArray(answerHashes) || answerHashes.length === 0) {
-      throw new Error('Answer hashes must be a non-empty array')
-    }
-    if (prizePool < BigInt(10000)) {
-      throw new Error('Prize pool must be at least 10,000 satoshis')
-    }
-    if (entryFee < BigInt(5000)) {
-      throw new Error('Entry fee must be at least 5,000 satoshis')
-    }
-    if (passThreshold < 0 || passThreshold > 100) {
-      throw new Error('Pass threshold must be between 0 and 100')
-    }
-
     // If not provided, default to 48 hours after deadline
     const TEACHER_REVEAL_WINDOW = 48 * 3600 * 1000
     const finalTeacherRevealDeadline = teacherRevealDeadline || (deadline + TEACHER_REVEAL_WINDOW)
@@ -144,9 +127,6 @@ export class Quiz extends Token {
    * @returns New Quiz token UTXO for recipient
    */
   mint(to: string, amount: bigint): Quiz {
-    if (!to) throw new Error('Recipient required')
-    if (amount <= 0n) throw new Error('Amount must be positive')
-
     // Determine originalQuizId: use existing one or this._id for first mint
     const quizId = this.originalQuizId || this._id
 
@@ -179,10 +159,6 @@ export class Quiz extends Token {
    * @returns New Quiz token UTXO for recipient
    */
   transfer(recipient: string, amount: bigint): Quiz {
-    if (!recipient) throw new Error('Recipient required')
-    if (amount <= 0n) throw new Error('Amount must be positive')
-    if (this.amount < amount) throw new Error('Insufficient balance')
-
     // Reduce this UTXO's balance
     this.amount -= amount
 
@@ -212,9 +188,6 @@ export class Quiz extends Token {
    * Used during redemption to convert quiz token into QuizAttempt
    */
   burn(): void {
-    if (this.amount !== 1n) {
-      throw new Error('Can only burn exactly 1 quiz token')
-    }
     this.amount = 0n
   }
 
@@ -321,5 +294,77 @@ export class Quiz extends Token {
       canReveal: Date.now() >= this.deadline && Date.now() < this.teacherRevealDeadline,
       isExpired: Date.now() > this.teacherRevealDeadline && this.status === 'active'
     }
+  }
+}
+
+// ============================================================================
+// HELPER CLASS
+// Pattern: Bitcoin Computer monorepo - Helper class with computer instance
+// ============================================================================
+
+export class QuizHelper {
+  computer: any
+  mod?: string
+
+  constructor(computer: any, mod?: string) {
+    this.computer = computer
+    this.mod = mod
+  }
+
+  async deploy(Token: any, Quiz: any) {
+    this.mod = await this.computer.deploy(`export ${Token}\nexport ${Quiz}`)
+    return this.mod
+  }
+
+  // Validation function
+  validateQuizParams(params: {
+    teacherPubKey: string
+    initialSupply: bigint
+    symbol: string
+    questionHashIPFS: string
+    answerHashes: string[]
+    prizePool: bigint
+    entryFee: bigint
+    passThreshold: number
+    deadline: number
+    teacherRevealDeadline: number
+  }): void {
+    if (!params.teacherPubKey) throw new Error('Teacher public key required')
+    if (!params.questionHashIPFS) throw new Error('Question hash required')
+    if (!Array.isArray(params.answerHashes) || params.answerHashes.length === 0) {
+      throw new Error('Answer hashes must be a non-empty array')
+    }
+    if (params.prizePool < BigInt(10000)) {
+      throw new Error('Prize pool must be at least 10,000 satoshis')
+    }
+    if (params.entryFee < BigInt(5000)) {
+      throw new Error('Entry fee must be at least 5,000 satoshis')
+    }
+    if (params.passThreshold < 0 || params.passThreshold > 100) {
+      throw new Error('Pass threshold must be between 0 and 100')
+    }
+  }
+
+  async createQuiz(params: {
+    teacherPubKey: string
+    initialSupply: bigint
+    symbol: string
+    questionHashIPFS: string
+    answerHashes: string[]
+    prizePool: bigint
+    entryFee: bigint
+    passThreshold: number
+    deadline: number
+    teacherRevealDeadline: number
+  }) {
+    // Validate before creating
+    this.validateQuizParams(params)
+
+    const { tx, effect } = await this.computer.encode({
+      mod: this.mod,
+      exp: `new Quiz("${params.teacherPubKey}", BigInt(${params.initialSupply}), "${params.symbol}", "${params.teacherPubKey}", "${params.questionHashIPFS}", ${JSON.stringify(params.answerHashes)}, BigInt(${params.prizePool}), BigInt(${params.entryFee}), ${params.passThreshold}, ${params.deadline}, ${params.teacherRevealDeadline})`
+    })
+
+    return { tx, effect }
   }
 }

@@ -32,4 +32,23 @@ export declare class Payment extends Contract {
         canClaim: boolean;
     };
 }
+export declare class PaymentHelper {
+    computer: any;
+    mod?: string;
+    constructor(computer: any, mod?: string);
+    deploy(): Promise<string | undefined>;
+    createPayment(params: {
+        recipient: string;
+        amount: bigint;
+        purpose: string;
+        reference: string;
+    }): Promise<{
+        tx: any;
+        effect: any;
+    }>;
+    claimPayment(payment: any): Promise<{
+        tx: any;
+        effect: any;
+    }>;
+}
 //# sourceMappingURL=Payment.d.ts.map

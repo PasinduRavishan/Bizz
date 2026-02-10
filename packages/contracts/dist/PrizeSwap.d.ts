@@ -32,5 +32,16 @@ interface QuizAttempt extends Contract {
 export declare class PrizeSwap extends Contract {
     static swap(prizePayment: Payment, answerProof: AnswerProof, attempt: QuizAttempt): [Payment, AnswerProof, QuizAttempt];
 }
+/**
+ * Deploy PrizeSwap module
+ */
+export declare function deployPrizeSwapModule(computer: any, PrizeSwap: any): Promise<string>;
+export declare class PrizeSwapHelper {
+    computer: any;
+    mod?: string;
+    constructor(computer: any, mod?: string);
+    deploy(): Promise<string | undefined>;
+    createPrizeSwapTx(prizePayment: any, answerProof: any, attempt: any, sighashType: number): any;
+}
 export {};
 //# sourceMappingURL=PrizeSwap.d.ts.map

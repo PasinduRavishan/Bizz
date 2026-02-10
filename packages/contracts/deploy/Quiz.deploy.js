@@ -311,3 +311,20 @@ export class Quiz extends Token {
         };
     }
 }
+export class QuizHelper {
+    constructor(computer, mod) {
+        this.computer = computer;
+        this.mod = mod;
+    }
+    async deploy(Token, Quiz) {
+        this.mod = await this.computer.deploy(`export ${Token}\nexport ${Quiz}`);
+        return this.mod;
+    }
+    async createQuiz(params) {
+        const { tx, effect } = await this.computer.encode({
+            mod: this.mod,
+            exp: `new Quiz("${params.teacherPubKey}", BigInt(${params.initialSupply}), "${params.symbol}", "${params.teacherPubKey}", "${params.questionHashIPFS}", ${JSON.stringify(params.answerHashes)}, BigInt(${params.prizePool}), BigInt(${params.entryFee}), ${params.passThreshold}, ${params.deadline}, ${params.teacherRevealDeadline})`
+        });
+        return { tx, effect };
+    }
+}

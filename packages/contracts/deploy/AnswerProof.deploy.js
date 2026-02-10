@@ -44,3 +44,20 @@ export class AnswerProof extends Contract {
         };
     }
 }
+export class AnswerProofHelper {
+    constructor(computer, mod) {
+        this.computer = computer;
+        this.mod = mod;
+    }
+    async deploy() {
+        this.mod = await this.computer.deploy(`export ${AnswerProof}`);
+        return this.mod;
+    }
+    async createAnswerProof(params) {
+        const { tx, effect } = await this.computer.encode({
+            mod: this.mod,
+            exp: `new AnswerProof("${params.student}", "${params.quizRef}", "${params.attemptRef}", ${JSON.stringify(params.answers)}, ${params.score}, ${params.passed})`
+        });
+        return { tx, effect };
+    }
+}

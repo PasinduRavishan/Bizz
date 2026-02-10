@@ -55,5 +55,15 @@ export declare class QuizRedemption extends Contract {
      */
     static redeem(quizToken: Quiz, quizAttempt: QuizAttempt): [Quiz, QuizAttempt];
 }
+export declare class QuizRedemptionHelper {
+    computer: any;
+    mod?: string;
+    constructor(computer: any, mod?: string);
+    deploy(): Promise<string | undefined>;
+    redeemQuizToken(quizToken: any, quizAttempt: any): Promise<{
+        tx: any;
+        effect: any;
+    }>;
+}
 export {};
 //# sourceMappingURL=QuizRedemption.d.ts.map

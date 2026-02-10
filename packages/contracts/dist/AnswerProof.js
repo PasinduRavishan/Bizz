@@ -55,4 +55,31 @@ export class AnswerProof extends Contract {
         };
     }
 }
+// ============================================================================
+// HELPER FUNCTIONS
+// Pattern: Bitcoin Computer monorepo - helpers outside class in same file
+// ============================================================================
+// ============================================================================
+// HELPER CLASS
+// Pattern: Bitcoin Computer monorepo - Helper class with computer instance
+// ============================================================================
+export class AnswerProofHelper {
+    computer;
+    mod;
+    constructor(computer, mod) {
+        this.computer = computer;
+        this.mod = mod;
+    }
+    async deploy() {
+        this.mod = await this.computer.deploy(`export ${AnswerProof}`);
+        return this.mod;
+    }
+    async createAnswerProof(params) {
+        const { tx, effect } = await this.computer.encode({
+            mod: this.mod,
+            exp: `new AnswerProof("${params.student}", "${params.quizRef}", "${params.attemptRef}", ${JSON.stringify(params.answers)}, ${params.score}, ${params.passed})`
+        });
+        return { tx, effect };
+    }
+}
 //# sourceMappingURL=AnswerProof.js.map

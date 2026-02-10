@@ -71,4 +71,31 @@ export class QuizRedemption extends Contract {
         return [quizToken, quizAttempt];
     }
 }
+// ============================================================================
+// HELPER CLASS
+// Pattern: Bitcoin Computer monorepo - Helper class with computer instance
+// ============================================================================
+export class QuizRedemptionHelper {
+    computer;
+    mod;
+    constructor(computer, mod) {
+        this.computer = computer;
+        this.mod = mod;
+    }
+    async deploy() {
+        this.mod = await this.computer.deploy(`export ${QuizRedemption}`);
+        return this.mod;
+    }
+    async redeemQuizToken(quizToken, quizAttempt) {
+        const { tx, effect } = await this.computer.encode({
+            exp: `${QuizRedemption} QuizRedemption.redeem(quizToken, quizAttempt)`,
+            env: {
+                quizToken: quizToken._rev,
+                quizAttempt: quizAttempt._rev
+            },
+            mod: this.mod
+        });
+        return { tx, effect };
+    }
+}
 //# sourceMappingURL=QuizRedemption.js.map

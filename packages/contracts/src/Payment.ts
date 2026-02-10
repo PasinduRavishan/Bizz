@@ -27,10 +27,6 @@ export class Payment extends Contract {
   claimedAt!: number | null
 
   constructor(recipient: string, amount: bigint, purpose: string, reference: string) {
-    if (!recipient) throw new Error('Recipient required')
-    if (amount < BigInt(546)) throw new Error('Amount must be at least 546 satoshis')
-    if (!purpose) throw new Error('Purpose required')
-
     super({
       // DON'T set _owners here - Let Bitcoin Computer set it to the creator
       // This allows atomic swaps where creator != recipient
@@ -50,9 +46,6 @@ export class Payment extends Contract {
   }
 
   claim(): void {
-    if (this.status === 'claimed') {
-      throw new Error('Payment already claimed')
-    }
     this._satoshis = BigInt(546)
     this.status = 'claimed'
     this.claimedAt = Date.now()
@@ -70,5 +63,73 @@ export class Payment extends Contract {
       claimedAt: this.claimedAt,
       canClaim: this.status === 'unclaimed'
     }
+  }
+}
+
+// ============================================================================
+// HELPER CLASS
+// Pattern: Bitcoin Computer monorepo - Helper class with computer instance
+// ============================================================================
+
+export class PaymentHelper {
+  computer: any
+  mod?: string
+
+  constructor(computer: any, mod?: string) {
+    this.computer = computer
+    this.mod = mod
+  }
+
+  async deploy() {
+    this.mod = await this.computer.deploy(`export ${Payment}`)
+    return this.mod
+  }
+
+  // Validation function
+  validatePaymentParams(params: {
+    recipient: string
+    amount: bigint
+    purpose: string
+    reference: string
+  }): void {
+    if (!params.recipient) throw new Error('Recipient required')
+    if (params.amount < BigInt(546)) throw new Error('Amount must be at least 546 satoshis')
+    if (!params.purpose) throw new Error('Purpose required')
+  }
+
+  validateClaim(payment: any): void {
+    if (payment.status === 'claimed') {
+      throw new Error('Payment already claimed')
+    }
+  }
+
+  async createPayment(params: {
+    recipient: string
+    amount: bigint
+    purpose: string
+    reference: string
+  }) {
+    // Validate before creating
+    this.validatePaymentParams(params)
+
+    const { tx, effect } = await this.computer.encode({
+      mod: this.mod,
+      exp: `new Payment("${params.recipient}", BigInt(${params.amount}), "${params.purpose}", "${params.reference}")`
+    })
+
+    return { tx, effect }
+  }
+
+  async claimPayment(payment: any) {
+    // Validate before claiming
+    this.validateClaim(payment)
+
+    const { tx, effect } = await this.computer.encode({
+      exp: `__bc__.claim()`,
+      env: { __bc__: payment._rev },
+      mod: this.mod
+    })
+
+    return { tx, effect }
   }
 }

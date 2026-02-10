@@ -31,3 +31,33 @@ export class PrizeSwap extends Contract {
         return [prizePayment, answerProof, attempt];
     }
 }
+/**
+ * Deploy PrizeSwap module
+ */
+export async function deployPrizeSwapModule(computer, PrizeSwap) {
+    return await computer.deploy(`export ${PrizeSwap}`);
+}
+export class PrizeSwapHelper {
+    constructor(computer, mod) {
+        this.computer = computer;
+        this.mod = mod;
+    }
+    async deploy() {
+        this.mod = await this.computer.deploy(`export ${PrizeSwap}`);
+        return this.mod;
+    }
+    createPrizeSwapTx(prizePayment, answerProof, attempt, sighashType) {
+        return this.computer.encode({
+            exp: `${PrizeSwap} PrizeSwap.swap(prizePayment, answerProof, attempt)`,
+            env: {
+                prizePayment: prizePayment._rev,
+                answerProof: answerProof._rev,
+                attempt: attempt._rev
+            },
+            mod: this.mod,
+            fund: false,
+            sign: true,
+            sighashType
+        });
+    }
+}

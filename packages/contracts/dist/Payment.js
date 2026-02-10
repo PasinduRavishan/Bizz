@@ -68,4 +68,35 @@ export class Payment extends Contract {
         };
     }
 }
+// ============================================================================
+// HELPER CLASS
+// Pattern: Bitcoin Computer monorepo - Helper class with computer instance
+// ============================================================================
+export class PaymentHelper {
+    computer;
+    mod;
+    constructor(computer, mod) {
+        this.computer = computer;
+        this.mod = mod;
+    }
+    async deploy() {
+        this.mod = await this.computer.deploy(`export ${Payment}`);
+        return this.mod;
+    }
+    async createPayment(params) {
+        const { tx, effect } = await this.computer.encode({
+            mod: this.mod,
+            exp: `new Payment("${params.recipient}", BigInt(${params.amount}), "${params.purpose}", "${params.reference}")`
+        });
+        return { tx, effect };
+    }
+    async claimPayment(payment) {
+        const { tx, effect } = await this.computer.encode({
+            exp: `__bc__.claim()`,
+            env: { __bc__: payment._rev },
+            mod: this.mod
+        });
+        return { tx, effect };
+    }
+}
 //# sourceMappingURL=Payment.js.map

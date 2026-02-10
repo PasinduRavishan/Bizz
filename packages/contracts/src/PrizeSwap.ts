@@ -49,6 +49,56 @@ export class PrizeSwap extends Contract {
   ): [Payment, AnswerProof, QuizAttempt] {
     // Get current owners
     const [student] = attempt._owners
+
+    // Get teacher from attempt
+    const teacher = attempt.quizTeacher
+
+    // Atomic swap: Exchange ownership using transfer() methods
+    prizePayment.transfer(student)    // Student receives prize
+    answerProof.transfer(teacher)     // Teacher receives answer proof
+
+    // Mark attempt as claimed using its method
+    attempt.claimPrize()
+
+    // Return all three objects with updated state
+    return [prizePayment, answerProof, attempt]
+  }
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// Pattern: Bitcoin Computer monorepo - helpers outside class in same file
+// ============================================================================
+
+/**
+ * Deploy PrizeSwap module
+ */
+export async function deployPrizeSwapModule(computer: any, PrizeSwap: any): Promise<string> {
+  return await computer.deploy(`export ${PrizeSwap}`)
+}
+
+// ============================================================================
+// HELPER CLASS
+// Pattern: Bitcoin Computer monorepo - Helper class with computer instance
+// ============================================================================
+
+export class PrizeSwapHelper {
+  computer: any
+  mod?: string
+
+  constructor(computer: any, mod?: string) {
+    this.computer = computer
+    this.mod = mod
+  }
+
+  async deploy() {
+    this.mod = await this.computer.deploy(`export ${PrizeSwap}`)
+    return this.mod
+  }
+
+  // Validation function
+  validateSwap(prizePayment: any, answerProof: any, attempt: any): void {
+    const [student] = attempt._owners
     const [proofOwner] = answerProof._owners
 
     // Verification 1: Prize payment recipient matches attempt owner
@@ -80,18 +130,23 @@ export class PrizeSwap extends Contract {
     if (!answerProof.passed) {
       throw new Error('Answer proof must show student passed')
     }
+  }
 
-    // Get teacher from attempt
-    const teacher = attempt.quizTeacher
+  createPrizeSwapTx(prizePayment: any, answerProof: any, attempt: any, sighashType: number) {
+    // Validate before creating swap transaction
+    this.validateSwap(prizePayment, answerProof, attempt)
 
-    // Atomic swap: Exchange ownership using transfer() methods
-    prizePayment.transfer(student)    // Student receives prize
-    answerProof.transfer(teacher)     // Teacher receives answer proof
-
-    // Mark attempt as claimed using its method
-    attempt.claimPrize()
-
-    // Return all three objects with updated state
-    return [prizePayment, answerProof, attempt]
+    return this.computer.encode({
+      exp: `${PrizeSwap} PrizeSwap.swap(prizePayment, answerProof, attempt)`,
+      env: {
+        prizePayment: prizePayment._rev,
+        answerProof: answerProof._rev,
+        attempt: attempt._rev
+      },
+      mod: this.mod,
+      fund: false,
+      sign: true,
+      sighashType
+    })
   }
 }

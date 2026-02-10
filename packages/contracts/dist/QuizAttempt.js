@@ -116,4 +116,47 @@ export class QuizAttempt extends Contract {
         };
     }
 }
+// ============================================================================
+// HELPER CLASS
+// Pattern: Bitcoin Computer monorepo - Helper class with computer instance
+// ============================================================================
+export class QuizAttemptHelper {
+    computer;
+    mod;
+    constructor(computer, mod) {
+        this.computer = computer;
+        this.mod = mod;
+    }
+    async deploy() {
+        this.mod = await this.computer.deploy(`export ${QuizAttempt}`);
+        return this.mod;
+    }
+    async createQuizAttempt(params) {
+        const { tx, effect } = await this.computer.encode({
+            mod: this.mod,
+            exp: `new QuizAttempt("${params.studentPubKey}", "${params.quizId}", "${params.answerCommitment}", BigInt(${params.entryFee}), "${params.teacher}")`
+        });
+        return { tx, effect };
+    }
+    async submitCommitment(attempt, commitment) {
+        const syncedAttempt = await this.computer.sync(attempt._rev);
+        const { tx, effect } = await this.computer.encodeCall({
+            target: syncedAttempt,
+            property: 'submitCommitment',
+            args: [commitment],
+            mod: this.mod
+        });
+        return { tx, effect };
+    }
+    async verifyAttempt(attempt, answers, nonce, revealedAnswers, passThreshold) {
+        const syncedAttempt = await this.computer.sync(attempt._rev);
+        const { tx, effect } = await this.computer.encodeCall({
+            target: syncedAttempt,
+            property: 'verify',
+            args: [answers, nonce, revealedAnswers, passThreshold],
+            mod: this.mod
+        });
+        return { tx, effect };
+    }
+}
 //# sourceMappingURL=QuizAttempt.js.map

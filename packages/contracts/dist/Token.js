@@ -93,4 +93,3 @@ export class Token extends Contract {
         return this.amount;
     }
 }
-//# sourceMappingURL=Token.js.map

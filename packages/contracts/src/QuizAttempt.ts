@@ -31,14 +31,6 @@ export class QuizAttempt extends Contract {
     entryFee: bigint,
     quizTeacher: string
   ) {
-    if (!owner) throw new Error('Owner required')
-    if (!quizRef) throw new Error('Quiz reference required')
-    // answerCommitment can be empty - filled after purchase
-    if (entryFee < BigInt(5000)) {
-      throw new Error('Entry fee must be at least 5,000 satoshis')
-    }
-    if (!quizTeacher) throw new Error('Quiz teacher public key required')
-
     // Determine initial status based on whether teacher or student is creating
     // If owner === quizTeacher, then it's teacher-created (available for exec)
     // If owner !== quizTeacher, then it's student-created (owned immediately)
@@ -64,9 +56,6 @@ export class QuizAttempt extends Contract {
 
   // Mark attempt as redeemed (called by QuizRedemption.redeem)
   markAsRedeemed(): void {
-    if (this.isRedeemed) {
-      throw new Error('Attempt already redeemed')
-    }
     this.isRedeemed = true
   }
 
@@ -79,30 +68,13 @@ export class QuizAttempt extends Contract {
 
   // Student submits answers after redeeming quiz token
   submitCommitment(commitment: string): void {
-    if (this.status !== 'owned') {
-      throw new Error('Must own attempt before submitting answers')
-    }
-    // ENFORCE: Must redeem quiz token before submitting answers
-    if (!this.isRedeemed) {
-      throw new Error('Must redeem quiz token before submitting answers')
-    }
-    if (!commitment) {
-      throw new Error('Commitment required')
-    }
-
     this.answerCommitment = commitment
     this.status = 'committed'
     this.submitTimestamp = Date.now()
   }
 
-
-
   // UPDATED: verify() now works from commitment only
   verify(score: number, passed: boolean): void {
-    if (this.status !== 'committed') {
-      throw new Error('Attempt must be committed before verification')
-    }
-
     this.score = score
     this.passed = passed
     this.status = 'verified'
@@ -114,27 +86,11 @@ export class QuizAttempt extends Contract {
   }
 
   claimPrize(): void {
-    if (this.status !== 'verified') {
-      throw new Error('Attempt must be verified before claiming prize')
-    }
-    if (!this.passed) {
-      throw new Error('Only passing attempts can claim prizes')
-    }
     this.status = 'prize_claimed'
     this.claimedAt = Date.now()
   }
 
   claimRefund(quiz: { status: string }): void {
-    if (quiz.status !== 'abandoned') {
-      throw new Error('Cannot claim refund: quiz not abandoned')
-    }
-    if (this.status === 'refunded') {
-      throw new Error('Refund already claimed')
-    }
-    if (!this._owners.includes(this.student)) {
-      throw new Error('Only the student can claim refund')
-    }
-
     this.status = 'refunded'
     this._satoshis = BigInt(546)
   }
@@ -150,5 +106,136 @@ export class QuizAttempt extends Contract {
       passed: this.passed,
       answerCommitment: this.answerCommitment
     }
+  }
+}
+
+// ============================================================================
+// HELPER CLASS
+// Pattern: Bitcoin Computer monorepo - Helper class with computer instance
+// ============================================================================
+
+export class QuizAttemptHelper {
+  computer: any
+  mod?: string
+
+  constructor(computer: any, mod?: string) {
+    this.computer = computer
+    this.mod = mod
+  }
+
+  async deploy() {
+    this.mod = await this.computer.deploy(`export ${QuizAttempt}`)
+    return this.mod
+  }
+
+  // Validation function
+  validateAttemptParams(params: {
+    studentPubKey: string
+    quizId: string
+    answerCommitment: string
+    entryFee: bigint
+    teacher: string
+  }): void {
+    if (!params.studentPubKey) throw new Error('Owner required')
+    if (!params.quizId) throw new Error('Quiz reference required')
+    if (params.entryFee < BigInt(5000)) {
+      throw new Error('Entry fee must be at least 5,000 satoshis')
+    }
+    if (!params.teacher) throw new Error('Quiz teacher public key required')
+  }
+
+  validateSubmitCommitment(attempt: any, commitment: string): void {
+    if (attempt.status !== 'owned') {
+      throw new Error('Must own attempt before submitting answers')
+    }
+    if (!attempt.isRedeemed) {
+      throw new Error('Must redeem quiz token before submitting answers')
+    }
+    if (!commitment) {
+      throw new Error('Commitment required')
+    }
+  }
+
+  validateVerify(attempt: any): void {
+    if (attempt.status !== 'committed') {
+      throw new Error('Attempt must be committed before verification')
+    }
+  }
+
+  validateClaimPrize(attempt: any): void {
+    if (attempt.status !== 'verified') {
+      throw new Error('Attempt must be verified before claiming prize')
+    }
+    if (!attempt.passed) {
+      throw new Error('Only passing attempts can claim prizes')
+    }
+  }
+
+  validateClaimRefund(attempt: any, quiz: any): void {
+    if (quiz.status !== 'abandoned') {
+      throw new Error('Cannot claim refund: quiz not abandoned')
+    }
+    if (attempt.status === 'refunded') {
+      throw new Error('Refund already claimed')
+    }
+    if (!attempt._owners.includes(attempt.student)) {
+      throw new Error('Only the student can claim refund')
+    }
+  }
+
+  async createQuizAttempt(params: {
+    studentPubKey: string
+    quizId: string
+    answerCommitment: string
+    entryFee: bigint
+    teacher: string
+  }) {
+    // Validate before creating
+    this.validateAttemptParams(params)
+
+    const { tx, effect } = await this.computer.encode({
+      mod: this.mod,
+      exp: `new QuizAttempt("${params.studentPubKey}", "${params.quizId}", "${params.answerCommitment}", BigInt(${params.entryFee}), "${params.teacher}")`
+    })
+
+    return { tx, effect }
+  }
+
+  async submitCommitment(attempt: any, commitment: string) {
+    const syncedAttempt = await this.computer.sync(attempt._rev)
+
+    // Validate before submitting
+    this.validateSubmitCommitment(syncedAttempt, commitment)
+
+    const { tx, effect } = await this.computer.encodeCall({
+      target: syncedAttempt,
+      property: 'submitCommitment',
+      args: [commitment],
+      mod: this.mod
+    })
+
+    return { tx, effect }
+  }
+
+  async verifyAttempt(
+    attempt: any,
+    answers: string[],
+    nonce: string,
+    revealedAnswers: string[],
+    passThreshold: number
+  ) {
+    const syncedAttempt = await this.computer.sync(attempt._rev)
+
+    // Validate before verifying
+    this.validateVerify(syncedAttempt)
+
+    const { tx, effect } = await this.computer.encodeCall({
+      target: syncedAttempt,
+      property: 'verify',
+      args: [answers, nonce, revealedAnswers, passThreshold],
+      mod: this.mod
+    })
+
+    return { tx, effect }
   }
 }

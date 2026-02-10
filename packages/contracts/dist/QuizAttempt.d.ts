@@ -39,4 +39,28 @@ export declare class QuizAttempt extends Contract {
         answerCommitment: string;
     };
 }
+export declare class QuizAttemptHelper {
+    computer: any;
+    mod?: string;
+    constructor(computer: any, mod?: string);
+    deploy(): Promise<string | undefined>;
+    createQuizAttempt(params: {
+        studentPubKey: string;
+        quizId: string;
+        answerCommitment: string;
+        entryFee: bigint;
+        teacher: string;
+    }): Promise<{
+        tx: any;
+        effect: any;
+    }>;
+    submitCommitment(attempt: any, commitment: string): Promise<{
+        tx: any;
+        effect: any;
+    }>;
+    verifyAttempt(attempt: any, answers: string[], nonce: string, revealedAnswers: string[], passThreshold: number): Promise<{
+        tx: any;
+        effect: any;
+    }>;
+}
 //# sourceMappingURL=QuizAttempt.d.ts.map

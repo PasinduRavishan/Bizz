@@ -66,6 +66,38 @@ export class QuizRedemption extends Contract {
     quizToken: Quiz,
     quizAttempt: QuizAttempt
   ): [Quiz, QuizAttempt] {
+    // STEP 1: Burn the quiz token (set amount to 0)
+    quizToken.burn()
+
+    // STEP 2: Mark attempt as redeemed (enables submitCommitment)
+    quizAttempt.markAsRedeemed()
+
+    // Return both modified contracts
+    return [quizToken, quizAttempt]
+  }
+}
+
+// ============================================================================
+// HELPER CLASS
+// Pattern: Bitcoin Computer monorepo - Helper class with computer instance
+// ============================================================================
+
+export class QuizRedemptionHelper {
+  computer: any
+  mod?: string
+
+  constructor(computer: any, mod?: string) {
+    this.computer = computer
+    this.mod = mod
+  }
+
+  async deploy() {
+    this.mod = await this.computer.deploy(`export ${QuizRedemption}`)
+    return this.mod
+  }
+
+  // Validation function
+  validateRedemption(quizToken: any, quizAttempt: any): void {
     const [student] = quizToken._owners
 
     // Validation: Student must own the quiz token
@@ -74,7 +106,7 @@ export class QuizRedemption extends Contract {
     }
 
     // Validation: Must have exactly 1 quiz token
-    if (quizToken.amount !== 1n) {
+    if (quizToken.amount !== BigInt(1)) {
       throw new Error('Must have exactly 1 quiz token to redeem')
     }
 
@@ -105,14 +137,21 @@ export class QuizRedemption extends Contract {
     if (quizAttempt.quizTeacher !== quizToken.teacher) {
       throw new Error('QuizAttempt teacher must match quiz token teacher')
     }
+  }
 
-    // STEP 1: Burn the quiz token (set amount to 0)
-    quizToken.burn()
+  async redeemQuizToken(quizToken: any, quizAttempt: any) {
+    // Validate before redemption
+    this.validateRedemption(quizToken, quizAttempt)
 
-    // STEP 2: Mark attempt as redeemed (enables submitCommitment)
-    quizAttempt.markAsRedeemed()
+    const { tx, effect } = await this.computer.encode({
+      exp: `${QuizRedemption} QuizRedemption.redeem(quizToken, quizAttempt)`,
+      env: {
+        quizToken: quizToken._rev,
+        quizAttempt: quizAttempt._rev
+      },
+      mod: this.mod
+    })
 
-    // Return both modified contracts
-    return [quizToken, quizAttempt]
+    return { tx, effect }
   }
 }
