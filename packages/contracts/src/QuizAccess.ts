@@ -34,18 +34,10 @@ export class QuizAccess extends Contract {
     const [teacher] = quizToken._owners
     const [student] = entryFeePayment._owners
 
-    // Atomic execution (following TBC20 Sale.exec pattern):
-    // 1. Transfer entry fee payment to teacher
     entryFeePayment.transfer(teacher)
 
-    // 2. Mint new quiz token for student (on-demand minting)
-    // quizToken.mint() creates a brand new token UTXO for the student
-    // Teacher's quiz token is used as template - its balance does NOT decrease
     const studentQuiz = quizToken.mint(student, 1n)
 
-    // Return both modified contracts
-    // entryFeePayment: now owned by teacher
-    // studentQuiz: freshly minted UTXO with 1 quiz token, owned by student
     return [entryFeePayment, studentQuiz]
   }
 }

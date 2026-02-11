@@ -367,24 +367,50 @@ describe('🎓 TBC20 QUIZ FUNGIBLE TOKEN FLOW - Quiz as Token + On-Demand Mintin
       // Mine block to confirm purchase
       await TestHelper.mineBlocks(student1Computer, 1)
 
-      // Query for student's quiz token
+      // Query for student's quiz token and teacher's entry fee payment
       const [studentQuizRev] = await student1Computer.query({ publicKey: student1PubKey })
       student1Quiz = await student1Computer.sync(studentQuizRev)
+
+      // Query for the entry fee payment now owned by teacher
+      const [entryPaymentRev] = await teacherComputer.query({ ids: [entryPayment._id] })
+      const teacherEntryPayment: any = await teacherComputer.sync(entryPaymentRev)
+
+      console.log(`\n    📊 After exec (before claim):`)
+      console.log(`      Student received quiz token: ${student1Quiz._id.substring(0, 20)}...`)
+      console.log(`      Student quiz amount: ${student1Quiz.amount} (freshly minted via mint())`)
+      console.log(`      Teacher's template amount: ${quiz.amount} (unchanged - template preserved)`)
+      console.log(`      Entry fee payment now owned by: ${teacherEntryPayment._owners[0] === teacherPubKey ? 'Teacher ✅' : 'Student ❌'}`)
+      console.log(`      Entry fee payment _satoshis: ${Number(teacherEntryPayment._satoshis).toLocaleString()}`)
+
+      // STEP 4: Teacher claims the entry fee payment to release satoshis
+      console.log(`\n    💰 Step 4: Teacher claiming entry fee payment...`)
+
+      const { tx: claimEntryTx } = await teacherPaymentHelper.claimPayment(teacherEntryPayment)
+      await teacherComputer.broadcast(claimEntryTx)
+      await TestHelper.waitForMempool()
+      await TestHelper.mineBlocks(teacherComputer, 1)
 
       const student1BalanceAfter = (await TestHelper.getBalance(student1Computer)).balance
       const teacherBalanceAfter = (await TestHelper.getBalance(teacherComputer)).balance
 
-      console.log(`\n    📊 After purchase:`)
-      console.log(`      Student received quiz token: ${student1Quiz._id.substring(0, 20)}...`)
-      console.log(`      Student quiz amount: ${student1Quiz.amount} (freshly minted via mint())`)
-      console.log(`      Teacher's template amount: ${quiz.amount} (unchanged - template preserved)`)
-
+      console.log(`\n    📊 After teacher claims entry fee:`)
       TestHelper.displayBalanceChange('Student 1 Balance', student1BalanceBefore, student1BalanceAfter)
       TestHelper.displayBalanceChange('Teacher Balance', teacherBalanceBefore, teacherBalanceAfter)
+
+      // Calculate effective gain/loss
+      const teacherNetChange = Number(teacherBalanceAfter) - Number(teacherBalanceBefore)
+      const entryFeeValue = Number(entryFee)
+      console.log(`      Entry fee value: ${entryFeeValue.toLocaleString()} sats`)
+      console.log(`      Teacher net change: ${teacherNetChange.toLocaleString()} sats`)
+      console.log(`      Transaction cost: ${(entryFeeValue - teacherNetChange).toLocaleString()} sats`)
 
       expect(quiz.amount).to.equal(BigInt(1))
       expect(student1Quiz.amount).to.equal(BigInt(1))
       expect(student1Quiz._owners[0]).to.equal(student1PubKey)
+      expect(teacherEntryPayment._owners[0]).to.equal(teacherPubKey)
+      // Note: Teacher balance may decrease if transaction fees > entry fee amount
+      // This is expected behavior - claiming small payments costs more than they're worth
+      // In production, teacher would accumulate multiple entry fees before claiming
     })
 
     it('should allow student to redeem quiz token and submit answers', async function () {

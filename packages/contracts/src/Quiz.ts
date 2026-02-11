@@ -1,29 +1,5 @@
-// TypeScript version for local development (not used for deployment)
-// Bitcoin Computer requires JavaScript without imports
-// For deployment, use the JS version or strip types
 import { Token } from './Token'
 
-/**
- * Quiz - Fungible Token (TBC20)
- *
- * THE QUIZ ITSELF IS NOW A FUNGIBLE TOKEN!
- *
- * Key Changes from Previous Architecture:
- * - Quiz extends Token (not Contract)
- * - Quiz is fungible - teacher can mint unlimited on-demand
- * - Students buy Quiz tokens via exec (pay entry fee → get quiz token)
- * - Students redeem Quiz token → creates QuizAttempt
- * - Quiz token gets burned during redemption
- *
- * Flow:
- * 1. Teacher creates Quiz fungible token (mints initial supply or 0)
- * 2. Student requests quiz access
- * 3. Teacher mints Quiz token on-demand (via transfer)
- * 4. QuizAccess.exec() swaps quiz token for entry fee payment (atomic)
- * 5. Student redeems Quiz token → creates QuizAttempt (burns quiz token)
- * 6. Student submits answers in QuizAttempt
- * 7. Rest continues (reveal, scoring, prize swap)
- */
 export class Quiz extends Token {
   // Token properties (inherited from Token base class)
   // amount!: bigint
@@ -113,24 +89,16 @@ export class Quiz extends Token {
       salt: null,
       winners: [],
       createdAt: Date.now(),
-      version: '2.0.0'  // Version 2.0 - Quiz as fungible token
+      version: '2.0.0'
     })
   }
 
-  /**
-   * Mint new quiz tokens (TBC20 on-demand minting)
-   * Creates NEW quiz tokens for recipient without reducing teacher's balance
-   * This is true on-demand minting - teacher creates quiz tokens when student requests
-   *
-   * @param to - Recipient's public key (student)
-   * @param amount - Amount to mint (usually 1)
-   * @returns New Quiz token UTXO for recipient
-   */
+
   mint(to: string, amount: bigint): Quiz {
     // Determine originalQuizId: use existing one or this._id for first mint
     const quizId = this.originalQuizId || this._id
 
-    // Create new Quiz token UTXO for recipient (true on-demand minting)
+
     // Pass all quiz metadata INCLUDING originalQuizId and teacher to the new token
     // NOTE: Teacher's balance does NOT decrease - this is minting, not transferring
     return new Quiz(
@@ -149,15 +117,6 @@ export class Quiz extends Token {
     )
   }
 
-  /**
-   * Transfer quiz tokens to recipient (TBC20 pattern)
-   * Creates new UTXO for recipient, reduces this token's amount
-   * This is for splitting existing tokens, not minting new ones
-   *
-   * @param recipient - Recipient's public key
-   * @param amount - Amount to transfer
-   * @returns New Quiz token UTXO for recipient
-   */
   transfer(recipient: string, amount: bigint): Quiz {
     // Reduce this UTXO's balance
     this.amount -= amount
@@ -183,17 +142,12 @@ export class Quiz extends Token {
     )
   }
 
-  /**
-   * Burn quiz token (destroy it)
-   * Used during redemption to convert quiz token into QuizAttempt
-   */
+
   burn(): void {
     this.amount = 0n
   }
 
-  /**
-   * Reveal answers (called by teacher after deadline)
-   */
+
   revealAnswers(answers: string[], salt: string): void {
     if (!this._owners.includes(this.teacher)) {
       throw new Error('Only teacher can reveal answers')
@@ -211,9 +165,7 @@ export class Quiz extends Token {
     this.distributionDeadline = Date.now() + (24 * 60 * 60 * 1000)
   }
 
-  /**
-   * Distribute prizes to winners
-   */
+
   distributePrizes(winners: Array<{ student: string; prizeAmount: string; paymentRev: string }> = []): void {
     if (this.status !== 'revealed') {
       throw new Error('Quiz must be revealed first')

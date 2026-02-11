@@ -44,16 +44,7 @@ export class Token extends Contract implements ITBC20 {
     })
   }
 
-  /**
-   * Mint new tokens (TBC20 standard)
-   * Creates NEW tokens for recipient without reducing sender's balance
-   * This is true on-demand minting - creates tokens from nothing
-   * MUST be overridden by subclass to return correct type
-   *
-   * @param to - Recipient's public key
-   * @param amount - Amount to mint
-   * @returns New token UTXO for recipient
-   */
+
   mint(to: string, amount: bigint): Token {
     if (!to) throw new Error('Recipient required')
     if (amount <= 0n) throw new Error('Amount must be positive')
@@ -62,15 +53,7 @@ export class Token extends Contract implements ITBC20 {
     throw new Error('mint() must be implemented by subclass')
   }
 
-  /**
-   * Transfer tokens to recipient (TBC20 standard)
-   * Creates new UTXO for recipient, reduces this token's amount
-   * MUST be overridden by subclass to return correct type
-   *
-   * @param recipient - Recipient's public key
-   * @param amount - Amount to transfer
-   * @returns New token UTXO for recipient
-   */
+
   transfer(recipient: string, amount: bigint): Token {
     if (!recipient) throw new Error('Recipient required')
     if (amount <= 0n) throw new Error('Amount must be positive')
@@ -83,10 +66,7 @@ export class Token extends Contract implements ITBC20 {
     throw new Error('transfer() must be implemented by subclass')
   }
 
-  /**
-   * Burn tokens (destroy them)
-   * Used during redemption or other destructive operations
-   */
+
   burn(): void {
     if (this.amount <= 0n) {
       throw new Error('No tokens to burn')
@@ -94,17 +74,12 @@ export class Token extends Contract implements ITBC20 {
     this.amount = 0n
   }
 
-  /**
-   * Get token balance (TBC20 interface)
-   */
+
   balanceOf(): bigint {
     return this.amount
   }
 
-  /**
-   * Get total supply (returns current amount in this UTXO)
-   * For global supply tracking, implement in subclass
-   */
+
   totalSupply(): bigint {
     return this.amount
   }
