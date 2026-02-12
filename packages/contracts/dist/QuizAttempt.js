@@ -7,16 +7,6 @@ export class QuizAttempt extends Contract {
     constructor(owner, // Student who owns this attempt
     quizRef, answerCommitment, // Empty at creation, filled after redemption
     entryFee, quizTeacher) {
-        if (!owner)
-            throw new Error('Owner required');
-        if (!quizRef)
-            throw new Error('Quiz reference required');
-        // answerCommitment can be empty - filled after purchase
-        if (entryFee < BigInt(5000)) {
-            throw new Error('Entry fee must be at least 5,000 satoshis');
-        }
-        if (!quizTeacher)
-            throw new Error('Quiz teacher public key required');
         // Determine initial status based on whether teacher or student is creating
         // If owner === quizTeacher, then it's teacher-created (available for exec)
         // If owner !== quizTeacher, then it's student-created (owned immediately)
@@ -40,9 +30,6 @@ export class QuizAttempt extends Contract {
     }
     // Mark attempt as redeemed (called by QuizRedemption.redeem)
     markAsRedeemed() {
-        if (this.isRedeemed) {
-            throw new Error('Attempt already redeemed');
-        }
         this.isRedeemed = true;
     }
     // Transfer ownership (if needed for future features)
@@ -53,25 +40,12 @@ export class QuizAttempt extends Contract {
     }
     // Student submits answers after redeeming quiz token
     submitCommitment(commitment) {
-        if (this.status !== 'owned') {
-            throw new Error('Must own attempt before submitting answers');
-        }
-        // ENFORCE: Must redeem quiz token before submitting answers
-        if (!this.isRedeemed) {
-            throw new Error('Must redeem quiz token before submitting answers');
-        }
-        if (!commitment) {
-            throw new Error('Commitment required');
-        }
         this.answerCommitment = commitment;
         this.status = 'committed';
         this.submitTimestamp = Date.now();
     }
     // UPDATED: verify() now works from commitment only
     verify(score, passed) {
-        if (this.status !== 'committed') {
-            throw new Error('Attempt must be committed before verification');
-        }
         this.score = score;
         this.passed = passed;
         this.status = 'verified';
@@ -81,25 +55,10 @@ export class QuizAttempt extends Contract {
         this.passed = false;
     }
     claimPrize() {
-        if (this.status !== 'verified') {
-            throw new Error('Attempt must be verified before claiming prize');
-        }
-        if (!this.passed) {
-            throw new Error('Only passing attempts can claim prizes');
-        }
         this.status = 'prize_claimed';
         this.claimedAt = Date.now();
     }
     claimRefund(quiz) {
-        if (quiz.status !== 'abandoned') {
-            throw new Error('Cannot claim refund: quiz not abandoned');
-        }
-        if (this.status === 'refunded') {
-            throw new Error('Refund already claimed');
-        }
-        if (!this._owners.includes(this.student)) {
-            throw new Error('Only the student can claim refund');
-        }
         this.status = 'refunded';
         this._satoshis = BigInt(546);
     }
@@ -131,7 +90,56 @@ export class QuizAttemptHelper {
         this.mod = await this.computer.deploy(`export ${QuizAttempt}`);
         return this.mod;
     }
+    // Validation function
+    validateAttemptParams(params) {
+        if (!params.studentPubKey)
+            throw new Error('Owner required');
+        if (!params.quizId)
+            throw new Error('Quiz reference required');
+        if (params.entryFee < BigInt(5000)) {
+            throw new Error('Entry fee must be at least 5,000 satoshis');
+        }
+        if (!params.teacher)
+            throw new Error('Quiz teacher public key required');
+    }
+    validateSubmitCommitment(attempt, commitment) {
+        if (attempt.status !== 'owned') {
+            throw new Error('Must own attempt before submitting answers');
+        }
+        if (!attempt.isRedeemed) {
+            throw new Error('Must redeem quiz token before submitting answers');
+        }
+        if (!commitment) {
+            throw new Error('Commitment required');
+        }
+    }
+    validateVerify(attempt) {
+        if (attempt.status !== 'committed') {
+            throw new Error('Attempt must be committed before verification');
+        }
+    }
+    validateClaimPrize(attempt) {
+        if (attempt.status !== 'verified') {
+            throw new Error('Attempt must be verified before claiming prize');
+        }
+        if (!attempt.passed) {
+            throw new Error('Only passing attempts can claim prizes');
+        }
+    }
+    validateClaimRefund(attempt, quiz) {
+        if (quiz.status !== 'abandoned') {
+            throw new Error('Cannot claim refund: quiz not abandoned');
+        }
+        if (attempt.status === 'refunded') {
+            throw new Error('Refund already claimed');
+        }
+        if (!attempt._owners.includes(attempt.student)) {
+            throw new Error('Only the student can claim refund');
+        }
+    }
     async createQuizAttempt(params) {
+        // Validate before creating
+        this.validateAttemptParams(params);
         const { tx, effect } = await this.computer.encode({
             mod: this.mod,
             exp: `new QuizAttempt("${params.studentPubKey}", "${params.quizId}", "${params.answerCommitment}", BigInt(${params.entryFee}), "${params.teacher}")`
@@ -140,6 +148,8 @@ export class QuizAttemptHelper {
     }
     async submitCommitment(attempt, commitment) {
         const syncedAttempt = await this.computer.sync(attempt._rev);
+        // Validate before submitting
+        this.validateSubmitCommitment(syncedAttempt, commitment);
         const { tx, effect } = await this.computer.encodeCall({
             target: syncedAttempt,
             property: 'submitCommitment',
@@ -150,6 +160,8 @@ export class QuizAttemptHelper {
     }
     async verifyAttempt(attempt, answers, nonce, revealedAnswers, passThreshold) {
         const syncedAttempt = await this.computer.sync(attempt._rev);
+        // Validate before verifying
+        this.validateVerify(syncedAttempt);
         const { tx, effect } = await this.computer.encodeCall({
             target: syncedAttempt,
             property: 'verify',

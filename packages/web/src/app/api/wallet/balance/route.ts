@@ -1,37 +1,43 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { createBitcoinComputer } from '@bizz/api/utils/bitcoin-computer-server'
+import { getUserWalletPath } from '@bizz/api/utils/wallet-path'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { getUserBalance } from '@/lib/wallet-service'
-
-export const runtime = 'nodejs'
 
 /**
- * POST /api/wallet/balance
- * Refreshes the wallet balance for the authenticated user
+ * GET /api/wallet/balance
+ * Get current wallet balance and address
  */
-export async function POST() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
-    
-    if (!session || !session.user) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      )
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    console.log('🔄 Refreshing balance for user:', session.user.id)
-    
-    const balance = await getUserBalance(session.user.id)
-    
+    // Get unique wallet path for this user
+    // If user has BOTH roles, default to TEACHER wallet
+    const role = session.user.role === 'BOTH' ? 'TEACHER' : session.user.role
+    const walletPath = getUserWalletPath(session.user.id, role)
+    const computer = createBitcoinComputer({ path: walletPath })
+    const address = computer.getAddress()
+
+    // Get balance from Bitcoin Computer
+    const balanceResult = await computer.getBalance()
+
     return NextResponse.json({
       success: true,
-      balance: Number(balance)
+      address,
+      balance: Number(balanceResult.balance),
+      balanceSats: Number(balanceResult.balance),
+      confirmed: Number(balanceResult.confirmed),
+      unconfirmed: Number(balanceResult.unconfirmed)
     })
   } catch (error) {
-    console.error('Failed to refresh balance:', error)
+    console.error('Error fetching wallet balance:', error)
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Failed to refresh balance' },
+      { error: error instanceof Error ? error.message : 'Failed to fetch balance' },
       { status: 500 }
     )
   }

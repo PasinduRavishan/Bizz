@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { initializeUserWallet } from '@/lib/wallet-service'
 import bcrypt from 'bcryptjs'
+import { createBitcoinComputer } from '@bizz/api/utils/bitcoin-computer-server'
+import { getUserWalletPath } from '@bizz/api/utils/wallet-path'
 
 export async function POST(request: NextRequest) {
   try {
@@ -56,44 +57,39 @@ export async function POST(request: NextRequest) {
 
     console.log(`👤 Created user ${user.id} (${user.role})`)
 
-    // Initialize custodial wallet for the user
+    // Development: Initialize and fund wallet
     try {
-      const walletInfo = await initializeUserWallet(user.id)
-      console.log(`✅ Wallet created for ${user.email}: ${walletInfo.address}`)
-      
-      return NextResponse.json(
-        { 
-          message: 'User created successfully with custodial wallet',
-          user: {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            address: walletInfo.address,
-            walletType: 'CUSTODIAL'
-          }
-        },
-        { status: 201 }
-      )
+      const walletPath = getUserWalletPath(user.id, role)
+      const userComputer = createBitcoinComputer({ path: walletPath })
+      const address = userComputer.getAddress()
+
+      console.log(`💰 Funding ${role} wallet: ${address} (path: ${walletPath})`)
+      await userComputer.faucet(1000000) // Fund with 1,000,000 sats (1M for development)
+
+      // Mine a block to confirm the faucet transaction
+      const { mineBlocks } = await import('@bizz/api/utils/bitcoin-computer-server')
+      await mineBlocks(userComputer, 1)
+
+      const balanceResult = await userComputer.getBalance()
+      const balanceNum = Number(balanceResult.balance)
+      console.log(`✅ Wallet funded and confirmed - Balance: ${balanceNum} sats (confirmed: ${Number(balanceResult.confirmed)}, unconfirmed: ${Number(balanceResult.unconfirmed)})`)
     } catch (walletError) {
-      console.error('⚠️ Wallet initialization failed:', walletError)
-      
-      // User is created but wallet failed - still return success
-      // They can retry wallet creation later
-      return NextResponse.json(
-        { 
-          message: 'User created successfully (wallet initialization pending)',
-          user: {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            role: user.role
-          },
-          warning: 'Wallet will be created on first use'
-        },
-        { status: 201 }
-      )
+      console.warn(`⚠️ Failed to fund wallet:`, walletError)
+      // Continue even if funding fails - user can be funded manually later
     }
+
+    return NextResponse.json(
+      {
+        message: 'User created successfully',
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role
+        }
+      },
+      { status: 201 }
+    )
   } catch (error) {
     console.error('Sign up error:', error)
     return NextResponse.json(

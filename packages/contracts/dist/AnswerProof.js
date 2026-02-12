@@ -15,18 +15,6 @@ export class AnswerProof extends Contract {
     passed;
     createdAt;
     constructor(student, quizRef, attemptRef, answers, score, passed) {
-        if (!student)
-            throw new Error('Student public key required');
-        if (!quizRef)
-            throw new Error('Quiz reference required');
-        if (!attemptRef)
-            throw new Error('Attempt reference required');
-        if (!Array.isArray(answers) || answers.length === 0) {
-            throw new Error('Answers must be a non-empty array');
-        }
-        if (score < 0 || score > 100) {
-            throw new Error('Score must be between 0 and 100');
-        }
         super({
             _owners: [student],
             _satoshis: BigInt(546), // Dust amount
@@ -74,7 +62,24 @@ export class AnswerProofHelper {
         this.mod = await this.computer.deploy(`export ${AnswerProof}`);
         return this.mod;
     }
+    // Validation function
+    validateProofParams(params) {
+        if (!params.student)
+            throw new Error('Student public key required');
+        if (!params.quizRef)
+            throw new Error('Quiz reference required');
+        if (!params.attemptRef)
+            throw new Error('Attempt reference required');
+        if (!Array.isArray(params.answers) || params.answers.length === 0) {
+            throw new Error('Answers must be a non-empty array');
+        }
+        if (params.score < 0 || params.score > 100) {
+            throw new Error('Score must be between 0 and 100');
+        }
+    }
     async createAnswerProof(params) {
+        // Validate before creating
+        this.validateProofParams(params);
         const { tx, effect } = await this.computer.encode({
             mod: this.mod,
             exp: `new AnswerProof("${params.student}", "${params.quizRef}", "${params.attemptRef}", ${JSON.stringify(params.answers)}, ${params.score}, ${params.passed})`

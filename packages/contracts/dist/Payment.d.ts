@@ -37,6 +37,13 @@ export declare class PaymentHelper {
     mod?: string;
     constructor(computer: any, mod?: string);
     deploy(): Promise<string | undefined>;
+    validatePaymentParams(params: {
+        recipient: string;
+        amount: bigint;
+        purpose: string;
+        reference: string;
+    }): void;
+    validateClaim(payment: any): void;
     createPayment(params: {
         recipient: string;
         amount: bigint;

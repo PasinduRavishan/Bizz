@@ -6,15 +6,6 @@ export class QuizAttempt extends Contract {
     constructor(owner, // Student who owns this attempt
     quizRef, answerCommitment, // Empty at creation, filled after redemption
     entryFee, quizTeacher) {
-        if (!owner)
-            throw new Error('Owner required');
-        if (!quizRef)
-            throw new Error('Quiz reference required');
-        if (entryFee < BigInt(5000)) {
-            throw new Error('Entry fee must be at least 5,000 satoshis');
-        }
-        if (!quizTeacher)
-            throw new Error('Quiz teacher public key required');
         const initialStatus = owner === quizTeacher ? 'available' : 'owned';
         super({
             _owners: [owner],
@@ -34,9 +25,6 @@ export class QuizAttempt extends Contract {
         });
     }
     markAsRedeemed() {
-        if (this.isRedeemed) {
-            throw new Error('Attempt already redeemed');
-        }
         this.isRedeemed = true;
     }
     transfer(newOwner) {
@@ -45,23 +33,11 @@ export class QuizAttempt extends Contract {
         this.status = 'owned';
     }
     submitCommitment(commitment) {
-        if (this.status !== 'owned') {
-            throw new Error('Must own attempt before submitting answers');
-        }
-        if (!this.isRedeemed) {
-            throw new Error('Must redeem quiz token before submitting answers');
-        }
-        if (!commitment) {
-            throw new Error('Commitment required');
-        }
         this.answerCommitment = commitment;
         this.status = 'committed';
         this.submitTimestamp = Date.now();
     }
     verify(score, passed) {
-        if (this.status !== 'committed') {
-            throw new Error('Attempt must be committed before verification');
-        }
         this.score = score;
         this.passed = passed;
         this.status = 'verified';
@@ -71,25 +47,10 @@ export class QuizAttempt extends Contract {
         this.passed = false;
     }
     claimPrize() {
-        if (this.status !== 'verified') {
-            throw new Error('Attempt must be verified before claiming prize');
-        }
-        if (!this.passed) {
-            throw new Error('Only passing attempts can claim prizes');
-        }
         this.status = 'prize_claimed';
         this.claimedAt = Date.now();
     }
     claimRefund(quiz) {
-        if (quiz.status !== 'abandoned') {
-            throw new Error('Cannot claim refund: quiz not abandoned');
-        }
-        if (this.status === 'refunded') {
-            throw new Error('Refund already claimed');
-        }
-        if (!this._owners.includes(this.student)) {
-            throw new Error('Only the student can claim refund');
-        }
         this.status = 'refunded';
         this._satoshis = BigInt(546);
     }
@@ -115,7 +76,54 @@ export class QuizAttemptHelper {
         this.mod = await this.computer.deploy(`export ${QuizAttempt}`);
         return this.mod;
     }
+    validateAttemptParams(params) {
+        if (!params.studentPubKey)
+            throw new Error('Owner required');
+        if (!params.quizId)
+            throw new Error('Quiz reference required');
+        if (params.entryFee < BigInt(5000)) {
+            throw new Error('Entry fee must be at least 5,000 satoshis');
+        }
+        if (!params.teacher)
+            throw new Error('Quiz teacher public key required');
+    }
+    validateSubmitCommitment(attempt, commitment) {
+        if (attempt.status !== 'owned') {
+            throw new Error('Must own attempt before submitting answers');
+        }
+        if (!attempt.isRedeemed) {
+            throw new Error('Must redeem quiz token before submitting answers');
+        }
+        if (!commitment) {
+            throw new Error('Commitment required');
+        }
+    }
+    validateVerify(attempt) {
+        if (attempt.status !== 'committed') {
+            throw new Error('Attempt must be committed before verification');
+        }
+    }
+    validateClaimPrize(attempt) {
+        if (attempt.status !== 'verified') {
+            throw new Error('Attempt must be verified before claiming prize');
+        }
+        if (!attempt.passed) {
+            throw new Error('Only passing attempts can claim prizes');
+        }
+    }
+    validateClaimRefund(attempt, quiz) {
+        if (quiz.status !== 'abandoned') {
+            throw new Error('Cannot claim refund: quiz not abandoned');
+        }
+        if (attempt.status === 'refunded') {
+            throw new Error('Refund already claimed');
+        }
+        if (!attempt._owners.includes(attempt.student)) {
+            throw new Error('Only the student can claim refund');
+        }
+    }
     async createQuizAttempt(params) {
+        this.validateAttemptParams(params);
         const { tx, effect } = await this.computer.encode({
             mod: this.mod,
             exp: `new QuizAttempt("${params.studentPubKey}", "${params.quizId}", "${params.answerCommitment}", BigInt(${params.entryFee}), "${params.teacher}")`
@@ -124,6 +132,7 @@ export class QuizAttemptHelper {
     }
     async submitCommitment(attempt, commitment) {
         const syncedAttempt = await this.computer.sync(attempt._rev);
+        this.validateSubmitCommitment(syncedAttempt, commitment);
         const { tx, effect } = await this.computer.encodeCall({
             target: syncedAttempt,
             property: 'submitCommitment',
@@ -134,6 +143,7 @@ export class QuizAttemptHelper {
     }
     async verifyAttempt(attempt, answers, nonce, revealedAnswers, passThreshold) {
         const syncedAttempt = await this.computer.sync(attempt._rev);
+        this.validateVerify(syncedAttempt);
         const { tx, effect } = await this.computer.encodeCall({
             target: syncedAttempt,
             property: 'verify',

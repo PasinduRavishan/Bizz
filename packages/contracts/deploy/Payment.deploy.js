@@ -10,12 +10,6 @@
  */
 export class Payment extends Contract {
     constructor(recipient, amount, purpose, reference) {
-        if (!recipient)
-            throw new Error('Recipient required');
-        if (amount < BigInt(546))
-            throw new Error('Amount must be at least 546 satoshis');
-        if (!purpose)
-            throw new Error('Purpose required');
         super({
             _satoshis: amount,
             recipient,
@@ -31,9 +25,6 @@ export class Payment extends Contract {
         this._owners = [to];
     }
     claim() {
-        if (this.status === 'claimed') {
-            throw new Error('Payment already claimed');
-        }
         this._satoshis = BigInt(546);
         this.status = 'claimed';
         this.claimedAt = Date.now();
@@ -61,7 +52,21 @@ export class PaymentHelper {
         this.mod = await this.computer.deploy(`export ${Payment}`);
         return this.mod;
     }
+    validatePaymentParams(params) {
+        if (!params.recipient)
+            throw new Error('Recipient required');
+        if (params.amount < BigInt(546))
+            throw new Error('Amount must be at least 546 satoshis');
+        if (!params.purpose)
+            throw new Error('Purpose required');
+    }
+    validateClaim(payment) {
+        if (payment.status === 'claimed') {
+            throw new Error('Payment already claimed');
+        }
+    }
     async createPayment(params) {
+        this.validatePaymentParams(params);
         const { tx, effect } = await this.computer.encode({
             mod: this.mod,
             exp: `new Payment("${params.recipient}", BigInt(${params.amount}), "${params.purpose}", "${params.reference}")`
@@ -69,6 +74,7 @@ export class PaymentHelper {
         return { tx, effect };
     }
     async claimPayment(payment) {
+        this.validateClaim(payment);
         const { tx, effect } = await this.computer.encode({
             exp: `__bc__.claim()`,
             env: { __bc__: payment._rev },

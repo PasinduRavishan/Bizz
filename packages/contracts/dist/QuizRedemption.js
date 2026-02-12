@@ -3,41 +3,40 @@
 // For deployment, use the JS version or strip types
 // @ts-expect-error - Bitcoin Computer library type definitions issue
 import { Contract } from '@bitcoin-computer/lib';
-/**
- * QuizRedemption - Convert Quiz Token → QuizAttempt
- *
- * Student redeems their Quiz fungible token to create/unlock a QuizAttempt.
- * This enforces that students MUST own a quiz token before submitting answers.
- *
- * Process:
- * 1. Student owns 1 Quiz token (received via QuizAccess.exec)
- * 2. Student creates QuizAttempt (owned status)
- * 3. Student calls QuizRedemption.redeem(quizToken, quizAttempt)
- * 4. Quiz token gets burned (amount set to 0)
- * 5. QuizAttempt marked as redeemed (isRedeemed = true)
- * 6. Student can now submit answers
- *
- * Security:
- * - Prevents students from creating multiple attempts with one quiz token
- * - Ensures quiz token ownership before allowing quiz attempts
- * - Burns quiz token to prevent reuse
- */
 export class QuizRedemption extends Contract {
-    /**
-     * Redeem quiz token to unlock quiz attempt
-     *
-     * @param quizToken - Student's Quiz fungible token (must own 1)
-     * @param quizAttempt - Student's QuizAttempt (must be owned status)
-     * @returns [Burned quiz token, Redeemed quiz attempt]
-     */
     static redeem(quizToken, quizAttempt) {
+        // STEP 1: Burn the quiz token (set amount to 0)
+        quizToken.burn();
+        // STEP 2: Mark attempt as redeemed (enables submitCommitment)
+        quizAttempt.markAsRedeemed();
+        // Return both modified contracts
+        return [quizToken, quizAttempt];
+    }
+}
+// ============================================================================
+// HELPER CLASS
+// Pattern: Bitcoin Computer monorepo - Helper class with computer instance
+// ============================================================================
+export class QuizRedemptionHelper {
+    computer;
+    mod;
+    constructor(computer, mod) {
+        this.computer = computer;
+        this.mod = mod;
+    }
+    async deploy() {
+        this.mod = await this.computer.deploy(`export ${QuizRedemption}`);
+        return this.mod;
+    }
+    // Validation function
+    validateRedemption(quizToken, quizAttempt) {
         const [student] = quizToken._owners;
         // Validation: Student must own the quiz token
         if (!student) {
             throw new Error('Quiz token must be owned by student');
         }
         // Validation: Must have exactly 1 quiz token
-        if (quizToken.amount !== 1n) {
+        if (quizToken.amount !== BigInt(1)) {
             throw new Error('Must have exactly 1 quiz token to redeem');
         }
         // Validation: Check symbol (should be quiz symbol like "MATH101")
@@ -63,30 +62,10 @@ export class QuizRedemption extends Contract {
         if (quizAttempt.quizTeacher !== quizToken.teacher) {
             throw new Error('QuizAttempt teacher must match quiz token teacher');
         }
-        // STEP 1: Burn the quiz token (set amount to 0)
-        quizToken.burn();
-        // STEP 2: Mark attempt as redeemed (enables submitCommitment)
-        quizAttempt.markAsRedeemed();
-        // Return both modified contracts
-        return [quizToken, quizAttempt];
-    }
-}
-// ============================================================================
-// HELPER CLASS
-// Pattern: Bitcoin Computer monorepo - Helper class with computer instance
-// ============================================================================
-export class QuizRedemptionHelper {
-    computer;
-    mod;
-    constructor(computer, mod) {
-        this.computer = computer;
-        this.mod = mod;
-    }
-    async deploy() {
-        this.mod = await this.computer.deploy(`export ${QuizRedemption}`);
-        return this.mod;
     }
     async redeemQuizToken(quizToken, quizAttempt) {
+        // Validate before redemption
+        this.validateRedemption(quizToken, quizAttempt);
         const { tx, effect } = await this.computer.encode({
             exp: `${QuizRedemption} QuizRedemption.redeem(quizToken, quizAttempt)`,
             env: {

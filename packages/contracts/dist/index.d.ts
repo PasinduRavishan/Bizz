@@ -6,5 +6,11 @@ export { QuizAccess } from './QuizAccess';
 export { QuizRedemption } from './QuizRedemption';
 export { PrizeSwap } from './PrizeSwap';
 export { AnswerProof } from './AnswerProof';
-export { AttemptAccess } from './AttemptAccess';
+export { QuizHelper } from './Quiz';
+export { PaymentHelper } from './Payment';
+export { QuizAttemptHelper } from './QuizAttempt';
+export { QuizAccessHelper } from './QuizAccess';
+export { QuizRedemptionHelper } from './QuizRedemption';
+export { AnswerProofHelper } from './AnswerProof';
+export { PrizeSwapHelper } from './PrizeSwap';
 //# sourceMappingURL=index.d.ts.map

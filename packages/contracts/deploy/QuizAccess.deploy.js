@@ -6,15 +6,6 @@ export class QuizAccess extends Contract {
     static exec(quizToken, entryFeePayment) {
         const [teacher] = quizToken._owners;
         const [student] = entryFeePayment._owners;
-        if (entryFeePayment.recipient !== teacher) {
-            throw new Error('Entry fee must be paid to teacher');
-        }
-        if (entryFeePayment.purpose !== 'Entry Fee') {
-            throw new Error('Payment must be for entry fee');
-        }
-        if (entryFeePayment.amount !== quizToken.entryFee) {
-            throw new Error('Payment amount must match quiz entry fee');
-        }
         entryFeePayment.transfer(teacher);
         const studentQuiz = quizToken.mint(student, 1n);
         return [entryFeePayment, studentQuiz];
@@ -29,7 +20,20 @@ export class QuizAccessHelper {
         this.mod = await this.computer.deploy(`export ${QuizAccess}`);
         return this.mod;
     }
+    validateQuizAccess(quiz, payment) {
+        const [teacher] = quiz._owners;
+        if (payment.recipient !== teacher) {
+            throw new Error('Entry fee must be paid to teacher');
+        }
+        if (payment.purpose !== 'Entry Fee') {
+            throw new Error('Payment must be for entry fee');
+        }
+        if (payment.amount !== quiz.entryFee) {
+            throw new Error('Payment amount must match quiz entry fee');
+        }
+    }
     createQuizAccessTx(quiz, paymentMock, sighashType) {
+        this.validateQuizAccess(quiz, paymentMock);
         return this.computer.encode({
             exp: `${QuizAccess} QuizAccess.exec(quizToken, entryFeePayment)`,
             env: {

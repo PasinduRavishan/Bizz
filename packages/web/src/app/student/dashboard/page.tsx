@@ -1,190 +1,114 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
-import { WalletBalance } from '@/components/wallet/WalletBalance'
-import { StudentAttemptDetails } from '@/components/quiz/StudentAttemptDetails'
-import { RefundClaimModal } from '@/components/quiz/RefundClaimModal'
-import { CountdownTimer } from '@/components/ui/CountdownTimer'
+import { WalletWidget } from '@/components/WalletWidget'
 
 interface QuizAttempt {
   id: string
-  score: number
-  passed: boolean
+  contractId: string
   status: string
-  submitTimestamp: string
-  prizeAmount: string | null
+  score: number | null
+  passed: boolean | null
+  createdAt: string
   quiz: {
     id: string
+    contractId: string
     title: string | null
-    description: string | null
+    symbol: string
     questionCount: number
     passThreshold: number
     status: string
-    deadline: string
-    teacherRevealDeadline: string
-    distributionDeadline?: string
+    prizePool: string
     entryFee: string
-  }
-  refundReason?: string
-  refundAmount?: string
-}
-
-interface DashboardData {
-  attempts: QuizAttempt[]
-  refundableAttempts: QuizAttempt[]
-  stats: {
-    totalAttempts: number
-    completedAttempts: number
-    passedQuizzes: number
-    totalEarnings: string
-    totalRefundable: number
-    refundableCount: number
   }
 }
 
 export default function StudentDashboard() {
-  const { data: session } = useSession()
-  const [data, setData] = useState<DashboardData | null>(null)
+  const [attempts, setAttempts] = useState<QuizAttempt[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(null)
-  const [showRefundModal, setShowRefundModal] = useState(false)
 
   useEffect(() => {
-    const fetchDashboard = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const response = await fetch('/api/student/dashboard')
-        const result = await response.json()
+    fetchAttempts()
+  }, [])
 
-        if (response.ok) {
-          setData(result)
-        } else {
-          setError(result.error || 'Failed to fetch dashboard data')
-        }
-      } catch (err) {
-        console.error('Error fetching dashboard:', err)
-        setError('Failed to connect to server')
-      } finally {
-        setLoading(false)
+  const fetchAttempts = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const response = await fetch('/api/student/attempts?studentId=temp-student-id')
+      const data = await response.json()
+
+      if (data.success) {
+        setAttempts(data.attempts || [])
+      } else {
+        setError(data.error || 'Failed to fetch attempts')
       }
+    } catch (err) {
+      console.error('Error fetching attempts:', err)
+      setError('Failed to connect to server')
+    } finally {
+      setLoading(false)
     }
+  }
 
-    if (session?.user) {
-      fetchDashboard()
-    }
-  }, [session])
+  const formatSatoshis = (sats: string | number) => {
+    const num = typeof sats === 'string' ? parseInt(sats) : sats
+    return num.toLocaleString()
+  }
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
-      year: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
     })
   }
 
-  const getStatusBadge = (status: string) => {
-    const variants = {
-      COMMITTED: 'warning',
-      REVEALED: 'info',
-      VERIFIED: 'success',
-      FAILED: 'danger',
-      REFUNDED: 'refunded',
-    } as const
-
-    return <Badge variant={variants[status as keyof typeof variants] || 'default'}>{status}</Badge>
+  const getStatusBadge = (attempt: QuizAttempt) => {
+    if (attempt.passed === true) {
+      return <Badge variant="success">PASSED - Winner! 🏆</Badge>
+    } else if (attempt.passed === false) {
+      return <Badge variant="danger">FAILED</Badge>
+    } else if (attempt.status === 'COMMITTED') {
+      return <Badge variant="info">SUBMITTED</Badge>
+    } else if (attempt.status === 'VERIFIED') {
+      return <Badge variant="success">VERIFIED</Badge>
+    }
+    return <Badge variant="default">{attempt.status}</Badge>
   }
 
-  const formatSatoshis = (sats: string | number) => {
-    const amount = typeof sats === 'string' ? parseInt(sats) : sats
-    return amount.toLocaleString()
+  const canClaimPrize = (attempt: QuizAttempt) => {
+    return attempt.passed === true && attempt.quiz.status === 'REVEALED'
   }
 
   return (
     <main className="container mx-auto px-4 py-8 max-w-6xl">
-      {/* Header Section */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">My Attempts</h1>
-          <p className="text-gray-600 dark:text-gray-400">Track your quiz progress and earnings</p>
-        </div>
-        <Link href="/student/browse">
-          <Button size="lg">Browse Quizzes</Button>
-        </Link>
-      </div>
-
-      {/* Wallet Balance */}
+      {/* Header */}
       <div className="mb-8">
-        <WalletBalance />
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+          My Quiz Attempts
+        </h1>
+        <p className="text-gray-600 dark:text-gray-400">
+          View your quiz attempts and claim prizes
+        </p>
       </div>
 
-      {/* Refund Available Banner */}
-      {!loading && !error && data && data.refundableAttempts && data.refundableAttempts.length > 0 && (
-        <div className="mb-6 p-4 bg-white border border-gray-300 rounded-lg text-white">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-2xl">💸</span>
-                <h3 className="text-lg text-black font-bold">Refunds Available</h3>
-              </div>
-              <p className="text-sm text-black/90 mb-3">
-                You have {data.refundableAttempts.length} quiz attempt(s) eligible for refund due to abandoned quizzes.
-                Total refundable: {formatSatoshis(data.stats.totalRefundable)} sats
-              </p>
-              <Button
-                variant="outline"
-                className="bg-white text-purple-600 hover:bg-gray-100 dark:bg-white dark:text-purple-600 dark:hover:bg-gray-100"
-                onClick={() => setShowRefundModal(true)}
-              >
-                Claim {data.refundableAttempts.length} Refund{data.refundableAttempts.length > 1 ? 's' : ''}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Wallet Info */}
+      <div className="mb-6">
+        <WalletWidget />
+      </div>
 
-      {/* Stats Cards */}
-      <div className="grid md:grid-cols-4 gap-4 mb-8">
-        <Card>
-          <CardBody>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Total Attempts</div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">
-              {loading ? '...' : data?.stats.totalAttempts || 0}
-            </div>
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Completed</div>
-            <div className="text-2xl font-bold text-blue-600">
-              {loading ? '...' : data?.stats.completedAttempts || 0}
-            </div>
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Passed</div>
-            <div className="text-2xl font-bold text-green-600">
-              {loading ? '...' : data?.stats.passedQuizzes || 0}
-            </div>
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Total Earnings</div>
-            <div className="text-2xl font-bold text-purple-600">
-              {loading ? '...' : `${data?.stats.totalEarnings || '0.00000000'} BTC`}
-            </div>
-          </CardBody>
-        </Card>
+      {/* Browse Quizzes Button */}
+      <div className="mb-6">
+        <Link href="/student/browse">
+          <Button size="lg">🎯 Browse Quizzes</Button>
+        </Link>
       </div>
 
       {/* Loading State */}
@@ -198,109 +122,107 @@ export default function StudentDashboard() {
       {error && !loading && (
         <Card>
           <CardBody className="text-center py-12">
-            <div className="text-6xl mb-4">⚠️</div>
+            <div className="text-5xl mb-4">⚠️</div>
             <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-              Error Loading Dashboard
+              Error Loading Attempts
             </h3>
             <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
-            <Button onClick={() => window.location.reload()}>Try Again</Button>
+            <Button onClick={fetchAttempts}>Try Again</Button>
           </CardBody>
         </Card>
       )}
 
       {/* Attempts List */}
-      {!loading && !error && data && (
+      {!loading && !error && (
         <div className="space-y-4">
-          {data.attempts.length === 0 ? (
+          {attempts.length === 0 ? (
             <Card>
               <CardBody className="text-center py-12">
-                <div className="text-6xl mb-4">🎯</div>
+                <div className="text-6xl mb-4">📝</div>
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                  No attempts yet
+                  No Attempts Yet
                 </h3>
                 <p className="text-gray-600 dark:text-gray-400 mb-4">
-                  Start taking quizzes to earn rewards and test your knowledge!
+                  Browse quizzes and take your first quiz
                 </p>
                 <Link href="/student/browse">
-                  <Button>Browse Available Quizzes</Button>
+                  <Button>Browse Quizzes</Button>
                 </Link>
               </CardBody>
             </Card>
           ) : (
-            data.attempts.map((attempt) => (
+            attempts.map((attempt) => (
               <Card key={attempt.id} hover>
                 <CardBody>
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center justify-between gap-4">
+                    {/* Attempt Info */}
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-                          {attempt.quiz.title || 'Untitled Quiz'}
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                          {attempt.quiz.title || `Quiz ${attempt.quiz.symbol}`}
                         </h3>
-                        {getStatusBadge(attempt.status)}
-                        {attempt.passed && (
-                          <Badge variant="success">✓ Passed</Badge>
-                        )}
-                        {attempt.status === 'VERIFIED' && !attempt.passed && (
-                          <Badge variant="danger">✗ Failed</Badge>
-                        )}
+                        {getStatusBadge(attempt)}
                       </div>
 
-                      {attempt.quiz.description && (
-                        <p className="text-gray-600 dark:text-gray-400 text-sm mb-3">
-                          {attempt.quiz.description}
-                        </p>
-                      )}
-
-                      <div className="grid md:grid-cols-4 gap-4 text-sm mb-3">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                         <div>
-                          <span className="text-gray-600 dark:text-gray-400">Score:</span>
-                          <span className={`ml-2 font-medium ${
-                            attempt.passed ? 'text-green-600' : 'text-gray-900 dark:text-white'
-                          }`}>
-                            {attempt.score}%
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400">Required:</span>
-                          <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                            {attempt.quiz.passThreshold}%
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600 dark:text-gray-400">Questions:</span>
-                          <span className="ml-2 font-medium text-gray-900 dark:text-white">
+                          <span className="text-gray-600 dark:text-gray-400">Questions: </span>
+                          <span className="font-medium text-gray-900 dark:text-white">
                             {attempt.quiz.questionCount}
                           </span>
                         </div>
                         <div>
-                          <span className="text-gray-600 dark:text-gray-400">Prize:</span>
-                          <span className="ml-2 font-medium text-purple-600">
-                            {attempt.prizeAmount ? `${(Number(attempt.prizeAmount) / 100000000).toFixed(8)} BTC` : 'N/A'}
+                          <span className="text-gray-600 dark:text-gray-400">Your Score: </span>
+                          <span className={`font-medium ${
+                            attempt.passed === true
+                              ? 'text-green-600'
+                              : attempt.passed === false
+                              ? 'text-red-600'
+                              : 'text-gray-900 dark:text-white'
+                          }`}>
+                            {attempt.score !== null ? `${attempt.score}%` : 'Pending'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400">Pass Needed: </span>
+                          <span className="font-medium text-gray-900 dark:text-white">
+                            {attempt.quiz.passThreshold}%
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400">Prize Pool: </span>
+                          <span className="font-medium text-green-600">
+                            {formatSatoshis(attempt.quiz.prizePool)} sats
                           </span>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
-                        <span>Submitted: {formatDate(attempt.submitTimestamp)}</span>
-                        <span>•</span>
-                        <span>Quiz Status: {attempt.quiz.status}</span>
+                      <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                        Attempted: {formatDate(attempt.createdAt)}
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-2">
-                      {attempt.status === 'COMMITTED' ? (
-                        <Badge variant="warning" className="text-xs">
-                          ⏳ Waiting for teacher to reveal
-                        </Badge>
-                      ) : attempt.status === 'VERIFIED' ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setSelectedAttemptId(attempt.id)}
-                        >
-                          View Details
+                    {/* Actions */}
+                    <div className="flex gap-2">
+                      {canClaimPrize(attempt) ? (
+                        <Link href={`/student/prize/${attempt.id}`}>
+                          <Button variant="primary">
+                            🏆 Claim Prize
+                          </Button>
+                        </Link>
+                      ) : attempt.quiz.status === 'ACTIVE' && attempt.status === 'COMMITTED' ? (
+                        <Button variant="outline" disabled>
+                          ⏳ Waiting for Results
                         </Button>
-                      ) : null}
+                      ) : attempt.quiz.status === 'REVEALED' && !attempt.passed ? (
+                        <Button variant="outline" disabled>
+                          ❌ Not Passed
+                        </Button>
+                      ) : (
+                        <Button variant="outline" disabled>
+                          {attempt.status}
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </CardBody>
@@ -310,63 +232,40 @@ export default function StudentDashboard() {
         </div>
       )}
 
-      {/* Quick Actions */}
-      {!loading && !error && data && data.attempts.length > 0 && (
-        <div className="mt-8 grid md:grid-cols-2 gap-4">
-          <Card hover>
-            <CardBody className="text-center py-8">
-              <div className="text-4xl mb-3">📚</div>
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
-                Browse More Quizzes
-              </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                Discover new quizzes and earn more rewards
-              </p>
-              <Link href="/student/browse">
-                <Button>Explore Quizzes</Button>
-              </Link>
+      {/* Summary Stats */}
+      {!loading && !error && attempts.length > 0 && (
+        <div className="mt-8 grid md:grid-cols-3 gap-4">
+          <Card>
+            <CardBody className="text-center">
+              <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">
+                Total Attempts
+              </div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white">
+                {attempts.length}
+              </div>
             </CardBody>
           </Card>
-          <Card hover>
-            <CardBody className="text-center py-8">
-              <div className="text-4xl mb-3">🏆</div>
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
-                Your Achievements
-              </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                {data.stats.passedQuizzes} quizzes passed • {data.stats.totalEarnings} BTC earned
-              </p>
-              <Button variant="outline" disabled>Coming Soon</Button>
+          <Card>
+            <CardBody className="text-center">
+              <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">
+                Passed (Won)
+              </div>
+              <div className="text-3xl font-bold text-green-600">
+                {attempts.filter(a => a.passed === true).length}
+              </div>
+            </CardBody>
+          </Card>
+          <Card>
+            <CardBody className="text-center">
+              <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">
+                Pending Results
+              </div>
+              <div className="text-3xl font-bold text-blue-600">
+                {attempts.filter(a => a.passed === null).length}
+              </div>
             </CardBody>
           </Card>
         </div>
-      )}
-
-      {/* Attempt Details Modal */}
-      {selectedAttemptId && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-gray-900 rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <StudentAttemptDetails
-                attemptId={selectedAttemptId}
-                onClose={() => setSelectedAttemptId(null)}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Refund Claim Modal */}
-      {showRefundModal && data && data.refundableAttempts && (
-        <RefundClaimModal
-          refundableAttempts={data.refundableAttempts}
-          onClose={() => setShowRefundModal(false)}
-          onSuccess={() => {
-            setShowRefundModal(false)
-            // Refresh dashboard
-            window.location.reload()
-          }}
-        />
       )}
     </main>
   )

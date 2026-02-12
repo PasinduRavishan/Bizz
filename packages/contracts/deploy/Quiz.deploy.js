@@ -26,16 +26,6 @@ export class Token extends Contract {
             ...additionalProps
         });
     }
-    /**
-     * Mint new tokens (TBC20 standard)
-     * Creates NEW tokens for recipient without reducing sender's balance
-     * This is true on-demand minting - creates tokens from nothing
-     * MUST be overridden by subclass to return correct type
-     *
-     * @param to - Recipient's public key
-     * @param amount - Amount to mint
-     * @returns New token UTXO for recipient
-     */
     mint(to, amount) {
         if (!to)
             throw new Error('Recipient required');
@@ -43,15 +33,6 @@ export class Token extends Contract {
             throw new Error('Amount must be positive');
         throw new Error('mint() must be implemented by subclass');
     }
-    /**
-     * Transfer tokens to recipient (TBC20 standard)
-     * Creates new UTXO for recipient, reduces this token's amount
-     * MUST be overridden by subclass to return correct type
-     *
-     * @param recipient - Recipient's public key
-     * @param amount - Amount to transfer
-     * @returns New token UTXO for recipient
-     */
     transfer(recipient, amount) {
         if (!recipient)
             throw new Error('Recipient required');
@@ -62,53 +43,21 @@ export class Token extends Contract {
         this.amount -= amount;
         throw new Error('transfer() must be implemented by subclass');
     }
-    /**
-     * Burn tokens (destroy them)
-     * Used during redemption or other destructive operations
-     */
     burn() {
         if (this.amount <= 0n) {
             throw new Error('No tokens to burn');
         }
         this.amount = 0n;
     }
-    /**
-     * Get token balance (TBC20 interface)
-     */
     balanceOf() {
         return this.amount;
     }
-    /**
-     * Get total supply (returns current amount in this UTXO)
-     * For global supply tracking, implement in subclass
-     */
     totalSupply() {
         return this.amount;
     }
 }
 
 
-/**
- * Quiz - Fungible Token (TBC20)
- *
- * THE QUIZ ITSELF IS NOW A FUNGIBLE TOKEN!
- *
- * Key Changes from Previous Architecture:
- * - Quiz extends Token (not Contract)
- * - Quiz is fungible - teacher can mint unlimited on-demand
- * - Students buy Quiz tokens via exec (pay entry fee → get quiz token)
- * - Students redeem Quiz token → creates QuizAttempt
- * - Quiz token gets burned during redemption
- *
- * Flow:
- * 1. Teacher creates Quiz fungible token (mints initial supply or 0)
- * 2. Student requests quiz access
- * 3. Teacher mints Quiz token on-demand (via transfer)
- * 4. QuizAccess.exec() swaps quiz token for entry fee payment (atomic)
- * 5. Student redeems Quiz token → creates QuizAttempt (burns quiz token)
- * 6. Student submits answers in QuizAttempt
- * 7. Rest continues (reveal, scoring, prize swap)
- */
 export class Quiz extends Token {
     /**
      * Constructor - Creates Quiz as fungible token
@@ -127,24 +76,6 @@ export class Quiz extends Token {
      * @param originalQuizId - Original quiz ID (for transferred tokens, empty string for new quiz)
      */
     constructor(to, initialSupply, symbol, teacher, questionHashIPFS, answerHashes, prizePool, entryFee, passThreshold, deadline, teacherRevealDeadline = null, originalQuizId = '') {
-        if (!to)
-            throw new Error('Owner required');
-        if (!teacher)
-            throw new Error('Teacher public key required');
-        if (!questionHashIPFS)
-            throw new Error('Question hash required');
-        if (!Array.isArray(answerHashes) || answerHashes.length === 0) {
-            throw new Error('Answer hashes must be a non-empty array');
-        }
-        if (prizePool < BigInt(10000)) {
-            throw new Error('Prize pool must be at least 10,000 satoshis');
-        }
-        if (entryFee < BigInt(5000)) {
-            throw new Error('Entry fee must be at least 5,000 satoshis');
-        }
-        if (passThreshold < 0 || passThreshold > 100) {
-            throw new Error('Pass threshold must be between 0 and 100');
-        }
         const TEACHER_REVEAL_WINDOW = 48 * 3600 * 1000;
         const finalTeacherRevealDeadline = teacherRevealDeadline || (deadline + TEACHER_REVEAL_WINDOW);
         super(to, initialSupply, symbol, {
@@ -165,45 +96,17 @@ export class Quiz extends Token {
             salt: null,
             winners: [],
             createdAt: Date.now(),
-            version: '2.0.0' // Version 2.0 - Quiz as fungible token
+            version: '2.0.0'
         });
     }
-    /**
-     * Mint new quiz tokens (TBC20 on-demand minting)
-     * Creates NEW quiz tokens for recipient without reducing teacher's balance
-     * This is true on-demand minting - teacher creates quiz tokens when student requests
-     *
-     * @param to - Recipient's public key (student)
-     * @param amount - Amount to mint (usually 1)
-     * @returns New Quiz token UTXO for recipient
-     */
     mint(to, amount) {
-        if (!to)
-            throw new Error('Recipient required');
-        if (amount <= 0n)
-            throw new Error('Amount must be positive');
         const quizId = this.originalQuizId || this._id;
         return new Quiz(to, // Recipient becomes the new owner
         amount, this.symbol, this.teacher, // Preserve original teacher (metadata)
         this.questionHashIPFS, this.answerHashes, this.prizePool, this.entryFee, this.passThreshold, this.deadline, this.teacherRevealDeadline, quizId // Preserve original quiz ID
         );
     }
-    /**
-     * Transfer quiz tokens to recipient (TBC20 pattern)
-     * Creates new UTXO for recipient, reduces this token's amount
-     * This is for splitting existing tokens, not minting new ones
-     *
-     * @param recipient - Recipient's public key
-     * @param amount - Amount to transfer
-     * @returns New Quiz token UTXO for recipient
-     */
     transfer(recipient, amount) {
-        if (!recipient)
-            throw new Error('Recipient required');
-        if (amount <= 0n)
-            throw new Error('Amount must be positive');
-        if (this.amount < amount)
-            throw new Error('Insufficient balance');
         this.amount -= amount;
         const quizId = this.originalQuizId || this._id;
         return new Quiz(recipient, // Recipient becomes the new owner
@@ -211,19 +114,9 @@ export class Quiz extends Token {
         this.questionHashIPFS, this.answerHashes, this.prizePool, this.entryFee, this.passThreshold, this.deadline, this.teacherRevealDeadline, quizId // Preserve original quiz ID
         );
     }
-    /**
-     * Burn quiz token (destroy it)
-     * Used during redemption to convert quiz token into QuizAttempt
-     */
     burn() {
-        if (this.amount !== 1n) {
-            throw new Error('Can only burn exactly 1 quiz token');
-        }
         this.amount = 0n;
     }
-    /**
-     * Reveal answers (called by teacher after deadline)
-     */
     revealAnswers(answers, salt) {
         if (!this._owners.includes(this.teacher)) {
             throw new Error('Only teacher can reveal answers');
@@ -239,9 +132,6 @@ export class Quiz extends Token {
         this.status = 'revealed';
         this.distributionDeadline = Date.now() + (24 * 60 * 60 * 1000);
     }
-    /**
-     * Distribute prizes to winners
-     */
     distributePrizes(winners = []) {
         if (this.status !== 'revealed') {
             throw new Error('Quiz must be revealed first');
@@ -320,7 +210,26 @@ export class QuizHelper {
         this.mod = await this.computer.deploy(`export ${Token}\nexport ${Quiz}`);
         return this.mod;
     }
+    validateQuizParams(params) {
+        if (!params.teacherPubKey)
+            throw new Error('Teacher public key required');
+        if (!params.questionHashIPFS)
+            throw new Error('Question hash required');
+        if (!Array.isArray(params.answerHashes) || params.answerHashes.length === 0) {
+            throw new Error('Answer hashes must be a non-empty array');
+        }
+        if (params.prizePool < BigInt(10000)) {
+            throw new Error('Prize pool must be at least 10,000 satoshis');
+        }
+        if (params.entryFee < BigInt(5000)) {
+            throw new Error('Entry fee must be at least 5,000 satoshis');
+        }
+        if (params.passThreshold < 0 || params.passThreshold > 100) {
+            throw new Error('Pass threshold must be between 0 and 100');
+        }
+    }
     async createQuiz(params) {
+        this.validateQuizParams(params);
         const { tx, effect } = await this.computer.encode({
             mod: this.mod,
             exp: `new Quiz("${params.teacherPubKey}", BigInt(${params.initialSupply}), "${params.symbol}", "${params.teacherPubKey}", "${params.questionHashIPFS}", ${JSON.stringify(params.answerHashes)}, BigInt(${params.prizePool}), BigInt(${params.entryFee}), ${params.passThreshold}, ${params.deadline}, ${params.teacherRevealDeadline})`

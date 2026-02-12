@@ -12,9 +12,14 @@ export { QuizRedemption } from './QuizRedemption';
 // Export prize distribution contracts
 export { PrizeSwap } from './PrizeSwap';
 export { AnswerProof } from './AnswerProof';
-// Legacy seat token exports (keep for backward compatibility)
-export { AttemptAccess } from './AttemptAccess';
-// export { SeatAccess } from './SeatAccess'
-// export { SeatRedemption } from './SeatRedemption'
-// export { SeatToken } from './SeatToken'
+// ============================================================================
+// CRITICAL: Export all helper classes for SDK
+// ============================================================================
+export { QuizHelper } from './Quiz';
+export { PaymentHelper } from './Payment';
+export { QuizAttemptHelper } from './QuizAttempt';
+export { QuizAccessHelper } from './QuizAccess';
+export { QuizRedemptionHelper } from './QuizRedemption';
+export { AnswerProofHelper } from './AnswerProof';
+export { PrizeSwapHelper } from './PrizeSwap';
 //# sourceMappingURL=index.js.map

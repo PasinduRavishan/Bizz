@@ -1,85 +1,37 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
-import { QuizStatus } from '@prisma/client'
+import { NextResponse } from 'next/server'
+import { prisma } from '@bizz/database'
 
-// GET /api/quizzes - Get all quizzes or a single quiz by ID
-export async function GET(request: NextRequest) {
+/**
+ * GET /api/quizzes
+ * Get all quizzes (with optional filters)
+ */
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url)
-    const status = searchParams.get('status')
-    const teacherAddress = searchParams.get('teacher')
-    const quizId = searchParams.get('id')
-
-    // If ID is provided, return a single quiz
-    if (quizId) {
-      const quiz = await prisma.quiz.findFirst({
-        where: {
-          OR: [
-            { id: quizId },
-            { contractId: quizId }
-          ]
-        },
-        include: {
-          teacher: {
-            select: {
-              address: true,
-              publicKey: true
-            }
-          },
-          _count: {
-            select: {
-              attempts: true,
-              winners: true
-            }
-          }
-        }
-      })
-
-      if (!quiz) {
-        return NextResponse.json(
-          { success: false, error: 'Quiz not found' },
-          { status: 404 }
-        )
-      }
-
-      const serializedQuiz = {
-        ...quiz,
-        prizePool: quiz.prizePool.toString(),
-        entryFee: quiz.entryFee.toString(),
-        attemptCount: quiz._count.attempts
-      }
-
-      return NextResponse.json({
-        success: true,
-        data: [serializedQuiz]
-      })
-    }
-
-    // Build where clause for listing
-    const where: Record<string, unknown> = {}
-
-    if (status) {
-      where.status = status.toUpperCase() as QuizStatus
-    }
-
-    if (teacherAddress) {
-      // Find teacher by address
-      const teacher = await prisma.user.findUnique({
-        where: { address: teacherAddress }
-      })
-      if (teacher) {
-        where.teacherId = teacher.id
-      }
-    }
-
-    // Query quizzes with teacher info
     const quizzes = await prisma.quiz.findMany({
-      where,
-      include: {
+      where: {
+        status: 'ACTIVE'
+      },
+      orderBy: {
+        createdAt: 'desc'
+      },
+      select: {
+        id: true,
+        contractId: true,
+        symbol: true,
+        questionHashIPFS: true,
+        questionCount: true,
+        prizePool: true,
+        entryFee: true,
+        passThreshold: true,
+        deadline: true,
+        status: true,
+        title: true,
+        description: true,
+        createdAt: true,
         teacher: {
           select: {
-            address: true,
-            publicKey: true
+            id: true,
+            name: true
           }
         },
         _count: {
@@ -87,71 +39,21 @@ export async function GET(request: NextRequest) {
             attempts: true
           }
         }
-      },
-      orderBy: {
-        createdAt: 'desc'
       }
     })
 
-    // Convert BigInt to string for JSON serialization
-    const serializedQuizzes = quizzes.map(quiz => ({
-      ...quiz,
-      prizePool: quiz.prizePool.toString(),
-      entryFee: quiz.entryFee.toString(),
-      attemptCount: quiz._count.attempts
-    }))
-
     return NextResponse.json({
       success: true,
-      data: serializedQuizzes,
-      count: serializedQuizzes.length
+      data: quizzes.map(q => ({
+        ...q,
+        prizePool: q.prizePool.toString(),
+        entryFee: q.entryFee.toString()
+      }))
     })
   } catch (error) {
-    console.error('Failed to fetch quizzes:', error)
+    console.error('Error fetching quizzes:', error)
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch quizzes' },
-      { status: 500 }
-    )
-  }
-}
-
-// POST /api/quizzes - Create new quiz (will be used after deploying contract)
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
-    
-    // Validate required fields
-    const required = ['teacher', 'questionHashIPFS', 'answerHashes', 'prizePool', 'entryFee', 'passThreshold', 'deadline']
-    for (const field of required) {
-      if (!body[field]) {
-        return NextResponse.json(
-          { success: false, error: `Missing required field: ${field}` },
-          { status: 400 }
-        )
-      }
-    }
-    
-    // Note: In production, this endpoint would:
-    // 1. Deploy Quiz contract to Bitcoin Computer
-    // 2. Wait for contract to be mined
-    // 3. Save contract ID to database via indexer
-    // For now, we just acknowledge the request
-    
-    return NextResponse.json({
-      success: true,
-      message: 'Quiz creation initiated. Deploy contract first, then indexer will sync it.',
-      data: {
-        teacher: body.teacher,
-        questionHashIPFS: body.questionHashIPFS,
-        questionCount: body.answerHashes.length,
-        prizePool: body.prizePool,
-        entryFee: body.entryFee
-      }
-    }, { status: 202 }) // 202 Accepted
-  } catch (error) {
-    console.error('Failed to create quiz:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to create quiz' },
+      { error: error instanceof Error ? error.message : 'Failed to fetch quizzes' },
       { status: 500 }
     )
   }

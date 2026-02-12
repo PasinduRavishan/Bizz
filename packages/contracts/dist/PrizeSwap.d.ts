@@ -41,6 +41,7 @@ export declare class PrizeSwapHelper {
     mod?: string;
     constructor(computer: any, mod?: string);
     deploy(): Promise<string | undefined>;
+    validateSwap(prizePayment: any, answerProof: any, attempt: any): void;
     createPrizeSwapTx(prizePayment: any, answerProof: any, attempt: any, sighashType: number): any;
 }
 export {};

@@ -27,6 +27,7 @@ export declare class QuizAccessHelper {
     mod?: string;
     constructor(computer: any, mod?: string);
     deploy(): Promise<string | undefined>;
+    validateQuizAccess(quiz: any, payment: any): void;
     createQuizAccessTx(quiz: any, paymentMock: any, sighashType: number): any;
 }
 export {};

@@ -44,6 +44,17 @@ export declare class QuizAttemptHelper {
     mod?: string;
     constructor(computer: any, mod?: string);
     deploy(): Promise<string | undefined>;
+    validateAttemptParams(params: {
+        studentPubKey: string;
+        quizId: string;
+        answerCommitment: string;
+        entryFee: bigint;
+        teacher: string;
+    }): void;
+    validateSubmitCommitment(attempt: any, commitment: string): void;
+    validateVerify(attempt: any): void;
+    validateClaimPrize(attempt: any): void;
+    validateClaimRefund(attempt: any, quiz: any): void;
     createQuizAttempt(params: {
         studentPubKey: string;
         quizId: string;

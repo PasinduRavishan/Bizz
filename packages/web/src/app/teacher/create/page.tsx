@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Input, Textarea } from '@/components/ui/Input'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
-import { createQuiz } from '@/services/quiz-service'
 
 interface Question {
   question: string
@@ -115,29 +114,36 @@ export default function CreateQuizPage() {
     setDeploymentMessage('Deploying quiz contract to blockchain... This may take 30-60 seconds.')
 
     try {
-      const result = await createQuiz({
-        questions,
-        prizePool: parseInt(prizePool),
-        entryFee: parseInt(entryFee),
-        passThreshold: parseInt(passThreshold),
-        deadline: new Date(deadline),
-        title: title.trim()
+      // Extract correct answers from questions
+      const correctAnswers = questions.map(q => q.options[q.correctAnswer])
+
+      const response = await fetch('/api/teacher/quiz/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          questions,
+          correctAnswers,
+          prizePool: parseInt(prizePool),
+          entryFee: parseInt(entryFee),
+          passThreshold: parseInt(passThreshold),
+          deadline: new Date(deadline).toISOString()
+        })
       })
+
+      const result = await response.json()
 
       if (result.success && result.quizId) {
         setCreatedQuizId(result.quizId)
         setDeploymentStep('success')
         setDeploymentMessage('Quiz created successfully!')
 
-        // Store answers and salt for reveal phase
-        if (result.salt && result.correctAnswers) {
-          localStorage.setItem(`quiz_${result.quizId}`, JSON.stringify({
-            answers: result.correctAnswers,
-            salt: result.salt,
-            timestamp: Date.now()
-          }))
-          console.log('Stored quiz data for reveal:', result.quizId)
-        }
+        // Store quiz data for reference (salt stored on server)
+        localStorage.setItem(`quiz_${result.quizId}`, JSON.stringify({
+          title: title.trim(),
+          timestamp: Date.now()
+        }))
+        console.log('Quiz created:', result.quizId)
       } else {
         setError(result.error || 'Failed to create quiz')
         setDeploymentStep('error')

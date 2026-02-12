@@ -30,16 +30,6 @@ export class Token extends Contract {
             ...additionalProps
         });
     }
-    /**
-     * Mint new tokens (TBC20 standard)
-     * Creates NEW tokens for recipient without reducing sender's balance
-     * This is true on-demand minting - creates tokens from nothing
-     * MUST be overridden by subclass to return correct type
-     *
-     * @param to - Recipient's public key
-     * @param amount - Amount to mint
-     * @returns New token UTXO for recipient
-     */
     mint(to, amount) {
         if (!to)
             throw new Error('Recipient required');
@@ -48,15 +38,6 @@ export class Token extends Contract {
         // Subclass MUST override this to create proper token type
         throw new Error('mint() must be implemented by subclass');
     }
-    /**
-     * Transfer tokens to recipient (TBC20 standard)
-     * Creates new UTXO for recipient, reduces this token's amount
-     * MUST be overridden by subclass to return correct type
-     *
-     * @param recipient - Recipient's public key
-     * @param amount - Amount to transfer
-     * @returns New token UTXO for recipient
-     */
     transfer(recipient, amount) {
         if (!recipient)
             throw new Error('Recipient required');
@@ -69,27 +50,17 @@ export class Token extends Contract {
         // Subclass MUST override this to create proper token type
         throw new Error('transfer() must be implemented by subclass');
     }
-    /**
-     * Burn tokens (destroy them)
-     * Used during redemption or other destructive operations
-     */
     burn() {
         if (this.amount <= 0n) {
             throw new Error('No tokens to burn');
         }
         this.amount = 0n;
     }
-    /**
-     * Get token balance (TBC20 interface)
-     */
     balanceOf() {
         return this.amount;
     }
-    /**
-     * Get total supply (returns current amount in this UTXO)
-     * For global supply tracking, implement in subclass
-     */
     totalSupply() {
         return this.amount;
     }
 }
+//# sourceMappingURL=Token.js.map

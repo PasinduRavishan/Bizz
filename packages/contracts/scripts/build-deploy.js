@@ -32,11 +32,7 @@ const contracts = [
   'QuizAccess',
   'QuizRedemption',
   'PrizeSwap',
-  'AnswerProof',
-  'SeatToken',
-  'SeatAccess',
-  'SeatRedemption',
-  'AttemptAccess'
+  'AnswerProof'
 ];
 
 // Helper function to process a contract file
