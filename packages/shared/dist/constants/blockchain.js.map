@@ -1,1 +1,0 @@
-{"version":3,"file":"blockchain.js","sourceRoot":"","sources":["../../src/constants/blockchain.ts"],"names":[],"mappings":"AAAA,MAAM,CAAC,MAAM,qBAAqB,GAAG,EAAE,GAAG,IAAI,GAAG,IAAI,CAAA,CAAC,iBAAiB;AACvE,MAAM,CAAC,MAAM,mBAAmB,GAAG,EAAE,GAAG,IAAI,GAAG,IAAI,CAAA,CAAC,iBAAiB;AACrE,MAAM,CAAC,MAAM,YAAY,GAAG,IAAI,CAAA,CAAC,KAAK"}

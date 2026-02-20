@@ -1,1 +1,0 @@
-{"version":3,"file":"student-attempt.service.d.ts","sourceRoot":"","sources":["../../src/services/student-attempt.service.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAGH,OAAO,EAAE,QAAQ,EAAE,MAAM,uBAAuB,CAAA;AAGhD,qBAAa,qBAAqB;IAChC;;;OAGG;WACU,cAAc,CACzB,eAAe,EAAE,QAAQ,EACzB,MAAM,EAAE;QAAE,SAAS,EAAE,MAAM,CAAC;QAAC,MAAM,EAAE,MAAM,CAAA;KAAE;;;;;;;;;;;;;CA2DhD"}

@@ -43,3 +43,6 @@ yarn-error.log*
 next-env.d.ts
 /.idea/
 /packages/web/.next/
+/packages/web/node_modules/
+/app/web/node_modules/
+/app/web/.next/
