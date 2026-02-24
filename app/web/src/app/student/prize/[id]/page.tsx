@@ -48,6 +48,13 @@ type PageStep =
 
 const POLL_INTERVAL = 10_000 // 10 seconds
 
+// Labels used by both the loading screen and the chain handler
+const CHAIN_STEPS = [
+  { label: 'Verifying your result',       icon: '🎯' },
+  { label: 'Creating your answer proof',  icon: '📜' },
+  { label: 'Sending sats to your wallet', icon: '⚡' },
+] as const
+
 function deriveStep(a: QuizAttempt): PageStep {
   if (a.status === 'PRIZE_CLAIMED') return 'complete'
 
@@ -267,6 +274,14 @@ export default function StudentPrizePage() {
   const [lowBalance, setLowBalance] = useState<string | null>(null) // action label when funds insufficient
   const [loading, setLoading] = useState(false)
   const [lastChecked, setLastChecked] = useState<Date | null>(null)
+  // Which loading-screen row is currently active (0 = Verify, 1 = Proof, 2 = Swap)
+  const [chainStep, setChainStep] = useState(0)
+  // Set when any step in the chain throws — keeps the loading screen visible with a failed row
+  const [chainError, setChainError] = useState<{
+    stepIdx: number      // which row failed (0 / 1 / 2)
+    message: string      // human-readable error
+    isLowBalance: boolean
+  } | null>(null)
 
   const pollRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -320,15 +335,52 @@ export default function StudentPrizePage() {
 
   // ── Action handlers ────────────────────────────────────────────────────────
   const handleVerify = async () => {
+    // Local var so the catch block always knows which step was running when it threw
+    let activeStep = 0
+
     try {
       setLoading(true)
-      setStep('verifying')
+      setChainError(null)
       setError(null)
       setLowBalance(null)
+      setStep('verifying')
+
+      // ── Row 0: Verify result ──────────────────────────────────────────────
+      setChainStep(0); activeStep = 0
       await apiService.attempt.verify(attemptId, {})
-      await fetchAttempt()
+
+      // ── Row 1: Create AnswerProof ─────────────────────────────────────────
+      setChainStep(1); activeStep = 1
+      await apiService.prize.createAnswerProof({ attemptId })
+
+      // ── Row 2: Wait for teacher swap TX, then execute swap ────────────────
+      setChainStep(2); activeStep = 2
+      // Backend auto-creates prize payment + swap TX after proof is confirmed.
+      // Poll until swapTxHex appears (usually within a few seconds on test network).
+      let swapReady = false
+      for (let i = 0; i < 12; i++) {          // up to ~60 s (12 × 5 s)
+        const data = await apiService.attempt.getById(attemptId)
+        if (data.attempt.swapTxHex) { swapReady = true; break }
+        await new Promise<void>(r => setTimeout(r, 5_000))
+      }
+      if (!swapReady) {
+        // Teacher hasn't acted yet — exit auto-chain and show the manual waiting card
+        await fetchAttempt()
+        return
+      }
+      await apiService.prize.executeSwap(attemptId)
+
+      await fetchAttempt()  // → 'complete'
     } catch (err) {
-      handleError(err, 'Verify Result', 'verify')
+      const isLowBalance = isInsufficientFunds(err)
+      setChainError({
+        stepIdx: activeStep,
+        message: isLowBalance
+          ? 'Not enough sats in your wallet to cover the transaction fee.'
+          : err instanceof Error ? err.message : 'An unexpected error occurred.',
+        isLowBalance,
+      })
+      // Keep step as 'verifying' so the loading screen stays visible with the failed row shown
     } finally { setLoading(false) }
   }
 
@@ -372,20 +424,129 @@ export default function StudentPrizePage() {
     )
   }
 
-  const loadingLabels: Partial<Record<PageStep, string>> = {
-    verifying: 'Verifying your result on the blockchain…',
-    'creating-proof': 'Creating AnswerProof on the blockchain…',
-    'executing-swap': 'Executing atomic swap and claiming your prize — releasing sats to your wallet…',
-  }
-  if (loadingLabels[step]) {
+  // ── Processing / chain-error screen ──────────────────────────────────────
+  // processingIdx = which row is currently active (used when no error)
+  const processingIdx = step === 'verifying'      ? chainStep
+    : step === 'creating-proof' ? 1
+    : step === 'executing-swap' ? 2
+    : 0
+
+  // Retry handlers indexed by CHAIN_STEPS position
+  const chainRetryHandlers = [handleVerify, handleCreateAnswerProof, handleExecuteSwap]
+
+  if (step === 'verifying' || step === 'creating-proof' || step === 'executing-swap') {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-zinc-900 flex items-center justify-center">
-        <Card className="max-w-md w-full">
-          <CardBody className="text-center py-12">
-            <div className="flex justify-center mb-6"><Spinner size="lg" /></div>
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Processing</h3>
-            <p className="text-gray-600 dark:text-gray-400">{loadingLabels[step]}</p>
-            <p className="text-sm text-gray-400 mt-3">This may take 30–60 seconds</p>
+      <div className="min-h-screen bg-gray-50 dark:bg-zinc-900 flex items-center justify-center p-4">
+        <Card className="max-w-sm w-full">
+          <CardBody className="py-10 px-8">
+            {/* Header icon */}
+            <div className="flex justify-center mb-5">
+              {chainError ? (
+                <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-3xl">⚠️</div>
+              ) : (
+                <Spinner size="lg" />
+              )}
+            </div>
+
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white text-center mb-1">
+              {chainError ? 'A step failed' : 'Working on it…'}
+            </h3>
+            <p className="text-xs text-gray-400 text-center mb-7">
+              {chainError ? 'See the details below' : 'This may take 30–60 seconds'}
+            </p>
+
+            {/* Step rows */}
+            <div className="space-y-2">
+              {CHAIN_STEPS.map((s, i) => {
+                type RowStatus = 'done' | 'active' | 'failed' | 'pending'
+                let status: RowStatus
+                if (chainError) {
+                  if (i === chainError.stepIdx)      status = 'failed'
+                  else if (i < chainError.stepIdx)   status = 'done'
+                  else                               status = 'pending'
+                } else {
+                  if (i < processingIdx)             status = 'done'
+                  else if (i === processingIdx)      status = 'active'
+                  else                               status = 'pending'
+                }
+
+                return (
+                  <div key={i}>
+                    <div className={`flex items-center gap-3 rounded-xl px-4 py-3 transition-colors ${
+                      status === 'active'  ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700'  :
+                      status === 'done'    ? 'bg-green-50 dark:bg-green-900/20'                                             :
+                      status === 'failed'  ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700'      :
+                                            'bg-gray-50 dark:bg-zinc-800 opacity-40'
+                    }`}>
+                      {/* Circle indicator */}
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                        status === 'done'    ? 'bg-green-500 text-white'                    :
+                        status === 'active'  ? 'bg-blue-600 text-white'                     :
+                        status === 'failed'  ? 'bg-red-500 text-white'                      :
+                                              'bg-gray-200 dark:bg-zinc-600 text-gray-400'
+                      }`}>
+                        {status === 'done' ? '✓' : status === 'failed' ? '✗' : i + 1}
+                      </div>
+
+                      {/* Label */}
+                      <span className={`flex-1 text-sm font-medium ${
+                        status === 'done'    ? 'text-green-700 dark:text-green-400' :
+                        status === 'active'  ? 'text-blue-700 dark:text-blue-300'   :
+                        status === 'failed'  ? 'text-red-700 dark:text-red-300'     :
+                                              'text-gray-400 dark:text-gray-500'
+                      }`}>
+                        {s.icon} {s.label}
+                      </span>
+
+                      {status === 'active' && <Spinner size="sm" />}
+                    </div>
+
+                    {/* Error message under the failed row */}
+                    {status === 'failed' && chainError && !chainError.isLowBalance && (
+                      <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 ml-10 leading-relaxed">
+                        {chainError.message}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Actions when a step failed */}
+            {chainError && (
+              <div className="mt-6 space-y-3">
+                {chainError.isLowBalance ? (
+                  /* Faucet card for insufficient-funds errors */
+                  <InsufficientFundsCard
+                    actionLabel={CHAIN_STEPS[chainError.stepIdx]?.label ?? 'this step'}
+                    onFunded={() => {
+                      setChainError(null)
+                      chainRetryHandlers[chainError.stepIdx]?.()
+                    }}
+                  />
+                ) : (
+                  /* Generic error: back or retry */
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => { setChainError(null); fetchAttempt() }}
+                    >
+                      ← Back
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      onClick={() => {
+                        setChainError(null)
+                        chainRetryHandlers[chainError.stepIdx]?.()
+                      }}
+                    >
+                      🔄 Retry
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
           </CardBody>
         </Card>
       </div>
@@ -528,12 +689,27 @@ export default function StudentPrizePage() {
               </p>
             </div>
 
-            <div className="space-y-1">
-              <ChecklistItem done={false} active={true}  label="Verify result on blockchain" />
-              <ChecklistItem done={false} active={false} label="Create AnswerProof" />
-              <ChecklistItem done={false} active={false} label="Wait for teacher's Prize Payment" />
-              <ChecklistItem done={false} active={false} label="Execute atomic swap" />
-              <ChecklistItem done={false} active={false} label="Claim prize" />
+            <div className="bg-gray-50 dark:bg-zinc-800 rounded-xl px-5 py-4">
+              <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-3">
+                What happens next
+              </p>
+              <div className="space-y-2.5 text-sm text-gray-600 dark:text-gray-300">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-bold shrink-0">1</span>
+                  <span>Your score is verified on the blockchain</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-bold shrink-0">2</span>
+                  <span>Your prize is prepared and locked in for you</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-bold shrink-0">3</span>
+                  <span>Sats land directly in your wallet 🎉</span>
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-3 text-center">
+                Each step runs automatically — just follow along
+              </p>
             </div>
 
             <div className="flex gap-3">
