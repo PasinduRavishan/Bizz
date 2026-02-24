@@ -13,6 +13,7 @@ export declare class PrizeService {
         message: string;
         prizePaymentId: any;
         amount: number;
+        winnerCount: number;
     }>;
     createSwapTransaction(teacherId: string, attemptId: string): Promise<{
         message: string;

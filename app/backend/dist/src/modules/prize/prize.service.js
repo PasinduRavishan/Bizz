@@ -142,6 +142,8 @@ let PrizeService = class PrizeService {
                         id: true,
                         teacherId: true,
                         prizePool: true,
+                        prizePerWinner: true,
+                        winnerCount: true,
                     },
                 },
             },
@@ -168,12 +170,16 @@ let PrizeService = class PrizeService {
                 throw new common_1.BadRequestException('Teacher wallet not configured');
             }
             const teacherComputer = computer_manager_1.computerManager.getComputer(teacher.encryptedMnemonic);
-            console.log('💰 Creating Prize Payment...');
+            const prizeAmount = attempt.quiz.prizePerWinner != null
+                ? attempt.quiz.prizePerWinner
+                : attempt.quiz.prizePool;
+            const winnerCount = attempt.quiz.winnerCount ?? 1;
+            console.log(`💰 Creating Prize Payment: ${prizeAmount.toString()} sats (${winnerCount} winner(s) sharing pool)`);
             const PaymentHelper = (await import('@bizz/contracts/deploy/Payment.deploy.js')).PaymentHelper;
             const paymentHelper = new PaymentHelper(teacherComputer, process.env.PAYMENT_MODULE_ID);
             const { tx: prizeTx, effect: prizeEffect } = await paymentHelper.createPayment({
                 recipient: attempt.student.publicKey,
-                amount: attempt.quiz.prizePool,
+                amount: prizeAmount,
                 purpose: 'Prize Payment',
                 reference: attempt.contractId,
             });
@@ -182,18 +188,20 @@ let PrizeService = class PrizeService {
             const prizePayment = prizeEffect.res;
             await this.mineBlocks(teacherComputer, 1);
             console.log(`✅ Prize Payment created: ${prizePayment._id}`);
-            console.log(`✅ Amount: ${prizePayment.amount.toLocaleString()} sats`);
+            console.log(`✅ Amount: ${prizeAmount.toString()} sats`);
             await this.prisma.quizAttempt.update({
                 where: { id: attemptId },
                 data: {
                     prizePaymentId: prizePayment._id,
                     prizePaymentRev: prizePayment._rev,
+                    prizeAmount,
                 },
             });
             return {
                 message: 'Prize Payment created successfully',
                 prizePaymentId: prizePayment._id,
-                amount: Number(prizePayment.amount),
+                amount: Number(prizeAmount),
+                winnerCount,
             };
         }
         catch (error) {
@@ -273,6 +281,7 @@ let PrizeService = class PrizeService {
                 quiz: {
                     select: {
                         prizePool: true,
+                        prizePerWinner: true,
                     },
                 },
             },
@@ -319,11 +328,16 @@ let PrizeService = class PrizeService {
                     contractRev: finalAttempt._rev,
                 },
             });
+            const satsClaimed = attempt.prizeAmount != null
+                ? Number(attempt.prizeAmount)
+                : attempt.quiz.prizePerWinner != null
+                    ? Number(attempt.quiz.prizePerWinner)
+                    : Number(attempt.quiz.prizePool);
             return {
                 message: 'SWAP executed and prize claimed successfully',
                 prizePaymentId: attempt.prizePaymentId,
                 status: 'prize_claimed',
-                satsClaimed: Number(attempt.quiz.prizePool),
+                satsClaimed,
             };
         }
         catch (error) {

@@ -2,6 +2,8 @@ import { CreateQuizDto, CreateQuizUIDto, RevealAnswersDto } from './dto';
 export declare class QuizService {
     private prisma;
     private quizModuleId;
+    private readonly revealFailures;
+    private readonly MAX_REVEAL_FAILURES;
     constructor();
     private mineBlocks;
     create(teacherId: string, createQuizDto: CreateQuizDto): Promise<{
@@ -34,6 +36,8 @@ export declare class QuizService {
             txHash: string | null;
             moduleSpecifier: string | null;
             questionCount: number;
+            winnerCount: number;
+            prizePerWinner: bigint | null;
             status: import(".prisma/client").$Enums.QuizStatus;
             revealedAnswers: import("@prisma/client/runtime/library").JsonValue | null;
             teacherId: string;
@@ -70,6 +74,8 @@ export declare class QuizService {
             txHash: string | null;
             moduleSpecifier: string | null;
             questionCount: number;
+            winnerCount: number;
+            prizePerWinner: bigint | null;
             status: import(".prisma/client").$Enums.QuizStatus;
             revealedAnswers: import("@prisma/client/runtime/library").JsonValue | null;
             teacherId: string;
@@ -83,6 +89,7 @@ export declare class QuizService {
         quizzes: {
             entryFee: string;
             prizePool: string;
+            prizePerWinner: string | null;
             attempts: {
                 id: string;
                 status: import(".prisma/client").$Enums.AttemptStatus;
@@ -120,6 +127,7 @@ export declare class QuizService {
             txHash: string | null;
             moduleSpecifier: string | null;
             questionCount: number;
+            winnerCount: number;
             status: import(".prisma/client").$Enums.QuizStatus;
             revealedAnswers: import("@prisma/client/runtime/library").JsonValue | null;
             teacherId: string;
@@ -135,6 +143,7 @@ export declare class QuizService {
             };
             entryFee: string;
             prizePool: string;
+            prizePerWinner: string | null;
             blockchainStatus: any;
             answerHashes: any;
             revealedAnswers: any;
@@ -172,6 +181,7 @@ export declare class QuizService {
             txHash: string | null;
             moduleSpecifier: string | null;
             questionCount: number;
+            winnerCount: number;
             status: import(".prisma/client").$Enums.QuizStatus;
             teacherId: string;
         };
@@ -185,6 +195,7 @@ export declare class QuizService {
             };
             entryFee: string;
             prizePool: string;
+            prizePerWinner: string | null;
             warning: string;
             attempts: {
                 id: string;
@@ -221,6 +232,7 @@ export declare class QuizService {
             txHash: string | null;
             moduleSpecifier: string | null;
             questionCount: number;
+            winnerCount: number;
             status: import(".prisma/client").$Enums.QuizStatus;
             revealedAnswers: import("@prisma/client/runtime/library").JsonValue | null;
             teacherId: string;
@@ -231,7 +243,10 @@ export declare class QuizService {
         message: string;
         gradedAttempts: number;
         passedAttempts: number;
+        winnerCount: number;
+        prizePerWinner: string | null;
     }>;
+    autoRevealExpiredQuizzes(): Promise<void>;
     remove(quizId: string, teacherId: string): Promise<{
         success: boolean;
         message: string;

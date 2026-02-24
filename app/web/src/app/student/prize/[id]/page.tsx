@@ -18,12 +18,15 @@ interface QuizAttempt {
   answerProofId: string | null
   prizePaymentId: string | null
   swapTxHex: string | null
+  prizeAmount: string | null   // per-winner share (set after prize payment is created)
   quiz: {
     id: string
     title: string | null
     symbol: string
     passThreshold: number
     prizePool: string
+    prizePerWinner: string | null  // pre-calculated per-winner share (set at reveal time)
+    winnerCount: number            // number of passing students
     status: string
     teacherId: string
   }
@@ -429,9 +432,25 @@ export default function StudentPrizePage() {
     )
   }
 
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+  // Resolve the effective per-student prize amount (in priority order):
+  // 1. attempt.prizeAmount — stored when prize payment was actually created (most accurate)
+  // 2. quiz.prizePerWinner — computed at reveal time before any verify call
+  // 3. quiz.prizePool     — fallback (single winner or pre-reveal display)
+  const effectivePrizeSats = attempt.prizeAmount != null
+    ? parseInt(attempt.prizeAmount)
+    : attempt.quiz.prizePerWinner != null
+    ? parseInt(attempt.quiz.prizePerWinner)
+    : parseInt(attempt.quiz.prizePool)
+
+  const effectivePrize = effectivePrizeSats.toLocaleString()
+  const isMultiWinner = (attempt.quiz.winnerCount ?? 1) > 1
+  const winnerLabel = isMultiWinner
+    ? ` (${attempt.quiz.winnerCount} winners share equally)`
+    : ''
+
   // ── Complete ───────────────────────────────────────────────────────────────
   if (step === 'complete') {
-    const prizePool = parseInt(attempt.quiz.prizePool).toLocaleString()
     return (
       <main className="container mx-auto px-4 py-8 max-w-2xl">
         <Card className="border-2 border-green-400 dark:border-green-600">
@@ -439,8 +458,13 @@ export default function StudentPrizePage() {
             <div className="text-6xl mb-4">🎉</div>
             <h3 className="text-3xl font-bold text-gray-900 dark:text-white mb-3">Prize Claimed!</h3>
             <p className="text-gray-600 dark:text-gray-400 mb-1">
-              <span className="text-2xl font-bold text-green-600">{prizePool} sats</span>
+              <span className="text-2xl font-bold text-green-600">{effectivePrize} sats</span>
             </p>
+            {isMultiWinner && (
+              <p className="text-xs text-gray-400 mb-1">
+                Your share from a {parseInt(attempt.quiz.prizePool).toLocaleString()} sat pool{winnerLabel}
+              </p>
+            )}
             <p className="text-gray-500 text-sm mb-8">have been added to your wallet</p>
             <div className="flex gap-3 justify-center">
               <Link href="/student/dashboard"><Button>Back to Dashboard</Button></Link>
@@ -454,7 +478,7 @@ export default function StudentPrizePage() {
 
   // ── Main flow ──────────────────────────────────────────────────────────────
   const quizTitle = attempt.quiz.title || `Quiz ${attempt.quiz.symbol}`
-  const prizePool = parseInt(attempt.quiz.prizePool).toLocaleString()
+  const prizePool = effectivePrize  // per-student prize (not total pool)
 
   return (
     <main className="container mx-auto px-4 py-8 max-w-2xl">
@@ -541,7 +565,14 @@ export default function StudentPrizePage() {
             <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-xl p-5 text-center">
               <div className="text-5xl mb-2">🏆</div>
               <div className="text-2xl font-bold text-green-800 dark:text-green-200">{attempt.score}%</div>
-              <div className="text-sm text-green-700 dark:text-green-300 mt-1">Prize: {prizePool} sats</div>
+              <div className="text-sm text-green-700 dark:text-green-300 mt-1">
+                Your Prize: <strong>{prizePool} sats</strong>
+              </div>
+              {isMultiWinner && (
+                <div className="text-xs text-green-600 dark:text-green-400 mt-1">
+                  🏅 {attempt.quiz.winnerCount} winners share the {parseInt(attempt.quiz.prizePool).toLocaleString()} sat pool equally
+                </div>
+              )}
             </div>
 
             <div className="bg-gray-50 dark:bg-zinc-800 rounded-lg p-4 text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
@@ -596,7 +627,7 @@ export default function StudentPrizePage() {
 
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-3 text-sm text-blue-800 dark:text-blue-200">
               <p className="font-semibold mb-1">💡 What happens next?</p>
-              <p>Your teacher will see your AnswerProof on their dashboard and create a Prize Payment of <strong>{prizePool} sats</strong>. This page will update automatically when they do.</p>
+              <p>The system is automatically preparing a Prize Payment of <strong>{prizePool} sats</strong> for you.{isMultiWinner ? ` (${attempt.quiz.winnerCount} winners each receive ${prizePool} sats from the total pool.)` : ''} This page will update automatically when ready.</p>
             </div>
 
             <div className="flex gap-3">
@@ -646,7 +677,7 @@ export default function StudentPrizePage() {
 
             <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-3 text-sm text-green-800 dark:text-green-200">
               <p className="font-semibold mb-1">🎯 Prize Payment locked in!</p>
-              <p>The teacher has reserved <strong>{prizePool} sats</strong> for you. They are setting up the atomic swap now — this page will update automatically.</p>
+              <p><strong>{prizePool} sats</strong> have been reserved for you. The atomic swap is being set up automatically — this page will update when ready.</p>
             </div>
 
             <div className="flex gap-3">

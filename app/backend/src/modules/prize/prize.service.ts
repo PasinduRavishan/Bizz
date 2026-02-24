@@ -199,6 +199,8 @@ export class PrizeService {
             id: true,
             teacherId: true,
             prizePool: true,
+            prizePerWinner: true,
+            winnerCount: true,
           },
         },
       },
@@ -230,17 +232,22 @@ export class PrizeService {
       // Get or create teacher's Computer instance (reused across all requests for this teacher)
       const teacherComputer = computerManager.getComputer(teacher.encryptedMnemonic)
 
-      console.log('💰 Creating Prize Payment...')
+      // Use per-winner share; fall back to full pool if not yet calculated
+      const prizeAmount: bigint = attempt.quiz.prizePerWinner != null
+        ? attempt.quiz.prizePerWinner
+        : attempt.quiz.prizePool
+      const winnerCount = attempt.quiz.winnerCount ?? 1
+      console.log(`💰 Creating Prize Payment: ${prizeAmount.toString()} sats (${winnerCount} winner(s) sharing pool)`)
 
       // Import PaymentHelper
       const PaymentHelper = (await import('@bizz/contracts/deploy/Payment.deploy.js')).PaymentHelper
       const paymentHelper = new PaymentHelper(teacherComputer, process.env.PAYMENT_MODULE_ID)
 
       // EXACT PATTERN from tbc20.test.ts lines 605-625:
-      // 1. Create Prize Payment
+      // 1. Create Prize Payment with correct per-winner amount
       const { tx: prizeTx, effect: prizeEffect } = await paymentHelper.createPayment({
         recipient: attempt.student.publicKey,
-        amount: attempt.quiz.prizePool,
+        amount: prizeAmount,
         purpose: 'Prize Payment',
         reference: attempt.contractId,
       })
@@ -257,21 +264,23 @@ export class PrizeService {
       await this.mineBlocks(teacherComputer, 1)
 
       console.log(`✅ Prize Payment created: ${prizePayment._id}`)
-      console.log(`✅ Amount: ${prizePayment.amount.toLocaleString()} sats`)
+      console.log(`✅ Amount: ${prizeAmount.toString()} sats`)
 
-      // Update database
+      // Update database — store the actual prize amount awarded
       await this.prisma.quizAttempt.update({
         where: { id: attemptId },
         data: {
           prizePaymentId: prizePayment._id,
           prizePaymentRev: prizePayment._rev,
+          prizeAmount,
         },
       })
 
       return {
         message: 'Prize Payment created successfully',
         prizePaymentId: prizePayment._id,
-        amount: Number(prizePayment.amount),
+        amount: Number(prizeAmount),
+        winnerCount,
       }
     } catch (error) {
       console.error('Error creating Prize Payment:', error)
@@ -399,6 +408,7 @@ export class PrizeService {
         quiz: {
           select: {
             prizePool: true,
+            prizePerWinner: true,
           },
         },
       },
@@ -476,11 +486,19 @@ export class PrizeService {
         },
       })
 
+      // Use the actual per-attempt prize amount stored when the prize payment was created.
+      // Fall back to prizePerWinner → prizePool in case prizeAmount was not stored yet.
+      const satsClaimed = attempt.prizeAmount != null
+        ? Number(attempt.prizeAmount)
+        : attempt.quiz.prizePerWinner != null
+        ? Number(attempt.quiz.prizePerWinner)
+        : Number(attempt.quiz.prizePool)
+
       return {
         message: 'SWAP executed and prize claimed successfully',
         prizePaymentId: attempt.prizePaymentId,
         status: 'prize_claimed',
-        satsClaimed: Number(attempt.quiz.prizePool),
+        satsClaimed,
       }
     } catch (error) {
       console.error('Error executing SWAP:', error)

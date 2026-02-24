@@ -2,14 +2,6 @@
 // Auto-generated from TypeScript source - DO NOT EDIT MANUALLY
 // Edit the TypeScript file in src/Token.ts instead
 
-/**
- * Token - Base class for TBC20 fungible tokens
- *
- * Implements the standard TBC20 pattern from Bitcoin Computer monorepo.
- * Pattern: class Token extends Contract with amount, symbol, _owners
- *
- * All fungible tokens should extend this base class.
- */
 export class Token extends Contract {
     constructor(to, amount, symbol, additionalProps) {
         if (!to)

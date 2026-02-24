@@ -80,7 +80,7 @@ export default function Home() {
             {
               icon: '🎓',
               title: 'For Teachers',
-              desc: 'Create quizzes, set prize pools, approve students and reveal answers — all on-chain.',
+              desc: 'Create quizzes, set prize pools and collect entry fees — everything else happens automatically.',
               color: 'blue',
             },
             {
@@ -116,12 +116,11 @@ export default function Home() {
           </h3>
           <div className="space-y-4">
             {[
-              { step: '1', label: 'Teacher creates quiz', sub: 'Sets questions, prize pool & entry fee', icon: '✏️' },
-              { step: '2', label: 'Student requests access', sub: 'Teacher approves the request on-chain', icon: '🤝' },
-              { step: '3', label: 'Student pays & takes quiz', sub: 'Entry fee exchanged for quiz token', icon: '💰' },
-              { step: '4', label: 'Submit & commit answers', sub: 'Cryptographic commitment stored on chain', icon: '📝' },
-              { step: '5', label: 'Teacher reveals & grades', sub: 'Results verified, winners determined', icon: '🎯' },
-              { step: '6', label: 'Winners claim Bitcoin', sub: 'Atomic swap: answer proof for prize', icon: '🏆' },
+              { step: '1', label: 'Teacher creates quiz', sub: 'Sets questions, prize pool & entry fee on-chain', icon: '✏️' },
+              { step: '2', label: 'Student requests & pays', sub: 'Access auto-approved — pay entry fee instantly', icon: '💰' },
+              { step: '3', label: 'Start quiz & submit answers', sub: 'Entry fee token burned, commitment stored on-chain', icon: '📝' },
+              { step: '4', label: 'Auto-reveal after deadline', sub: 'System reveals answers & grades all submissions', icon: '🤖' },
+              { step: '5', label: 'Winners claim Bitcoin prize', sub: 'Atomic swap: answer proof exchanged for sats', icon: '🏆' },
             ].map((s) => (
               <div key={s.step} className="flex items-start gap-4">
                 <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-sm font-bold text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5">

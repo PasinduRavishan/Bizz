@@ -1,17 +1,27 @@
 // @ts-expect-error - Bitcoin Computer library type definitions issue
 import { Contract } from '@bitcoin-computer/lib';
 export class QuizAccess extends Contract {
-    static exec(quizToken, entryFeePayment) {
-        const [teacher] = quizToken._owners;
+    // DEPRECATED: took quiz template as input and minted inside exec.
+    // Caused the quiz template UTXO to change on every student payment,
+    // making stored partial txs stale for concurrent students.
+    //
+    // static exec(quizToken: Quiz, entryFeePayment: Payment): [Payment, Quiz] {
+    //   const [teacher] = quizToken._owners
+    //   const [student] = entryFeePayment._owners
+    //   entryFeePayment.transfer(teacher)
+    //   const studentQuiz = quizToken.mint(student, 1n)
+    //   return [entryFeePayment, studentQuiz]
+    // }
+    static exec(mintedToken, entryFeePayment) {
+        const [teacher] = mintedToken._owners;
         const [student] = entryFeePayment._owners;
         entryFeePayment.transfer(teacher);
-        const studentQuiz = quizToken.mint(student, 1n);
-        return [entryFeePayment, studentQuiz];
+        mintedToken._owners = [student];
+        return [entryFeePayment, mintedToken];
     }
 }
 // ============================================================================
 // HELPER CLASS
-// Pattern: Bitcoin Computer monorepo - Helper class with computer instance
 // ============================================================================
 export class QuizAccessHelper {
     computer;
@@ -24,29 +34,15 @@ export class QuizAccessHelper {
         this.mod = await this.computer.deploy(`export ${QuizAccess}`);
         return this.mod;
     }
-    // Validation function
-    validateQuizAccess(quiz, payment) {
-        const [teacher] = quiz._owners;
-        // Validation: Check payment is addressed to teacher
-        if (payment.recipient !== teacher) {
+    createQuizAccessTx(mintedToken, paymentMock, sighashType) {
+        const [teacher] = mintedToken._owners;
+        if (paymentMock.recipient !== teacher) {
             throw new Error('Entry fee must be paid to teacher');
         }
-        // Validation: Check payment purpose
-        if (payment.purpose !== 'Entry Fee') {
-            throw new Error('Payment must be for entry fee');
-        }
-        // Validation: Check payment amount matches quiz entry fee
-        if (payment.amount !== quiz.entryFee) {
-            throw new Error('Payment amount must match quiz entry fee');
-        }
-    }
-    createQuizAccessTx(quiz, paymentMock, sighashType) {
-        // Validate before creating transaction
-        this.validateQuizAccess(quiz, paymentMock);
         return this.computer.encode({
-            exp: `${QuizAccess} QuizAccess.exec(quizToken, entryFeePayment)`,
+            exp: `${QuizAccess} QuizAccess.exec(mintedToken, entryFeePayment)`,
             env: {
-                quizToken: quiz._rev,
+                mintedToken: mintedToken._rev,
                 entryFeePayment: paymentMock._rev
             },
             mocks: { entryFeePayment: paymentMock },

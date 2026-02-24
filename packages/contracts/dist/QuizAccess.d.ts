@@ -20,15 +20,14 @@ interface Payment extends Contract {
     transfer(to: string): void;
 }
 export declare class QuizAccess extends Contract {
-    static exec(quizToken: Quiz, entryFeePayment: Payment): [Payment, Quiz];
+    static exec(mintedToken: Quiz, entryFeePayment: Payment): [Payment, Quiz];
 }
 export declare class QuizAccessHelper {
     computer: any;
     mod?: string;
     constructor(computer: any, mod?: string);
     deploy(): Promise<string | undefined>;
-    validateQuizAccess(quiz: any, payment: any): void;
-    createQuizAccessTx(quiz: any, paymentMock: any, sighashType: number): any;
+    createQuizAccessTx(mintedToken: any, paymentMock: any, sighashType: number): any;
 }
 export {};
 //# sourceMappingURL=QuizAccess.d.ts.map

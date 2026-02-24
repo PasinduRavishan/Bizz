@@ -12,7 +12,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.QuizAttemptService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
+const lib_1 = require("@bitcoin-computer/lib");
 const computer_manager_1 = require("../../common/computer-manager");
+const { SIGHASH_SINGLE, SIGHASH_ANYONECANPAY } = lib_1.Transaction;
 let QuizAttemptService = class QuizAttemptService {
     prisma;
     constructor() {
@@ -207,6 +209,16 @@ let QuizAttemptService = class QuizAttemptService {
                     contractRev: updatedAttempt._rev,
                 },
             });
+            if (passed) {
+                console.log('🏆 Student passed! Auto-creating prize payment and swap tx...');
+                try {
+                    await this.autoCreatePrizePaymentAndSwap(attemptId, studentId);
+                    console.log('✅ Prize payment and swap tx auto-created');
+                }
+                catch (prizeError) {
+                    console.error('⚠️  Auto prize creation failed (non-fatal):', prizeError.message);
+                }
+            }
             return {
                 message: 'Attempt verified successfully',
                 attemptId: dbAttempt.contractId,
@@ -219,6 +231,127 @@ let QuizAttemptService = class QuizAttemptService {
             console.error('Error verifying attempt:', error);
             throw new common_1.BadRequestException(`Failed to verify attempt: ${error.message}`);
         }
+    }
+    async autoCreatePrizePaymentAndSwap(attemptId, studentId) {
+        const attempt = await this.prisma.quizAttempt.findUnique({
+            where: { id: attemptId },
+            include: {
+                student: {
+                    select: {
+                        id: true,
+                        encryptedMnemonic: true,
+                        publicKey: true,
+                    },
+                },
+                quiz: {
+                    select: {
+                        id: true,
+                        contractId: true,
+                        teacherId: true,
+                        prizePool: true,
+                        prizePerWinner: true,
+                        winnerCount: true,
+                        questions: true,
+                        passThreshold: true,
+                    },
+                },
+            },
+        });
+        if (!attempt)
+            throw new Error('Attempt not found');
+        if (!attempt.passed)
+            throw new Error('Attempt did not pass');
+        const teacher = await this.prisma.user.findUnique({
+            where: { id: attempt.quiz.teacherId },
+            select: { encryptedMnemonic: true, publicKey: true },
+        });
+        if (!teacher || !teacher.encryptedMnemonic)
+            throw new Error('Teacher wallet not configured');
+        const studentComputer = computer_manager_1.computerManager.getComputer(attempt.student.encryptedMnemonic);
+        const teacherComputer = computer_manager_1.computerManager.getComputer(teacher.encryptedMnemonic);
+        console.log('  📜 Auto-creating AnswerProof...');
+        let answers;
+        const commitment = attempt.answerCommitment;
+        if (!commitment)
+            throw new Error('No answer commitment on attempt');
+        const match = commitment.match(/commitment-(\[[\d,\s]+\])-/);
+        if (!match)
+            throw new Error(`Cannot parse commitment: ${commitment.substring(0, 60)}`);
+        const studentIndices = JSON.parse(match[1]);
+        const questions = attempt.quiz.questions;
+        if (!questions || questions.length === 0) {
+            answers = studentIndices.map(idx => String(idx));
+        }
+        else {
+            answers = studentIndices.map((idx, i) => {
+                const q = questions[i];
+                return (q && q.options && q.options[idx] !== undefined) ? q.options[idx] : String(idx);
+            });
+        }
+        const score = attempt.score ?? 0;
+        const passed = attempt.passed ?? false;
+        const AnswerProofHelper = (await import('@bizz/contracts/deploy/AnswerProof.deploy.js')).AnswerProofHelper;
+        const proofHelper = new AnswerProofHelper(studentComputer, process.env.ANSWER_PROOF_MODULE_ID);
+        const { tx: proofTx, effect: proofEffect } = await proofHelper.createAnswerProof({
+            student: attempt.student.publicKey,
+            quizRef: attempt.quiz.contractId,
+            attemptRef: attempt.contractId,
+            answers,
+            score,
+            passed,
+        });
+        await studentComputer.broadcast(proofTx);
+        await new Promise(resolve => setTimeout(resolve, 200));
+        await this.mineBlocks(studentComputer, 1);
+        const answerProof = proofEffect.res;
+        console.log(`  ✅ AnswerProof created: ${answerProof._id}`);
+        await this.prisma.quizAttempt.update({
+            where: { id: attemptId },
+            data: { answerProofId: answerProof._id },
+        });
+        const prizeAmount = attempt.quiz.prizePerWinner != null
+            ? attempt.quiz.prizePerWinner
+            : attempt.quiz.prizePool;
+        const winnerCount = attempt.quiz.winnerCount ?? 1;
+        console.log(`  💰 Auto-creating Prize Payment: ${prizeAmount.toString()} sats (${winnerCount} winner(s) sharing pool of ${attempt.quiz.prizePool.toString()} sats)`);
+        const PaymentHelper = (await import('@bizz/contracts/deploy/Payment.deploy.js')).PaymentHelper;
+        const paymentHelper = new PaymentHelper(teacherComputer, process.env.PAYMENT_MODULE_ID);
+        const { tx: prizeTx, effect: prizeEffect } = await paymentHelper.createPayment({
+            recipient: attempt.student.publicKey,
+            amount: prizeAmount,
+            purpose: 'Prize Payment',
+            reference: attempt.contractId,
+        });
+        await teacherComputer.broadcast(prizeTx);
+        await new Promise(resolve => setTimeout(resolve, 200));
+        await this.mineBlocks(teacherComputer, 1);
+        const prizePayment = prizeEffect.res;
+        console.log(`  ✅ Prize Payment created: ${prizePayment._id} (amount: ${prizeAmount.toString()} sats)`);
+        await this.prisma.quizAttempt.update({
+            where: { id: attemptId },
+            data: {
+                prizePaymentId: prizePayment._id,
+                prizePaymentRev: prizePayment._rev,
+                prizeAmount,
+            },
+        });
+        console.log('  🔄 Auto-creating partial SWAP tx...');
+        const PrizeSwapHelper = (await import('@bizz/contracts/deploy/PrizeSwap.deploy.js')).PrizeSwapHelper;
+        const swapHelper = new PrizeSwapHelper(teacherComputer, process.env.PRIZE_SWAP_MODULE_ID);
+        const [prizePaymentRev] = await teacherComputer.query({ ids: [prizePayment._id] });
+        const syncedPrizePayment = await teacherComputer.sync(prizePaymentRev);
+        const [answerProofRev] = await teacherComputer.query({ ids: [answerProof._id] });
+        const syncedAnswerProof = await teacherComputer.sync(answerProofRev);
+        const [attemptRev] = await teacherComputer.query({ ids: [attempt.contractId] });
+        const syncedAttempt = await teacherComputer.sync(attemptRev);
+        const { tx: swapTx } = await swapHelper.createPrizeSwapTx(syncedPrizePayment, syncedAnswerProof, syncedAttempt, SIGHASH_SINGLE | SIGHASH_ANYONECANPAY);
+        const partialSwapTxHex = swapTx.toHex();
+        console.log('  ✅ Partial SWAP tx created');
+        await this.prisma.quizAttempt.update({
+            where: { id: attemptId },
+            data: { swapTxHex: partialSwapTxHex },
+        });
+        console.log('✅ All prize components auto-created — student can now claim prize!');
     }
     async getStudentAttempts(studentId) {
         const attempts = await this.prisma.quizAttempt.findMany({
@@ -234,6 +367,8 @@ let QuizAttemptService = class QuizAttemptService {
                         deadline: true,
                         passThreshold: true,
                         prizePool: true,
+                        prizePerWinner: true,
+                        winnerCount: true,
                         entryFee: true,
                         questionCount: true,
                     },
@@ -244,9 +379,11 @@ let QuizAttemptService = class QuizAttemptService {
         return {
             attempts: attempts.map(a => ({
                 ...a,
+                prizeAmount: a.prizeAmount != null ? a.prizeAmount.toString() : null,
                 quiz: {
                     ...a.quiz,
                     prizePool: a.quiz.prizePool.toString(),
+                    prizePerWinner: a.quiz.prizePerWinner != null ? a.quiz.prizePerWinner.toString() : null,
                     entryFee: a.quiz.entryFee.toString(),
                 },
             })),
@@ -266,6 +403,8 @@ let QuizAttemptService = class QuizAttemptService {
                         deadline: true,
                         passThreshold: true,
                         prizePool: true,
+                        prizePerWinner: true,
+                        winnerCount: true,
                         entryFee: true,
                         questionCount: true,
                         revealedAnswers: true,
@@ -289,9 +428,11 @@ let QuizAttemptService = class QuizAttemptService {
         return {
             attempt: {
                 ...attempt,
+                prizeAmount: attempt.prizeAmount != null ? attempt.prizeAmount.toString() : null,
                 quiz: {
                     ...attempt.quiz,
                     prizePool: attempt.quiz.prizePool.toString(),
+                    prizePerWinner: attempt.quiz.prizePerWinner != null ? attempt.quiz.prizePerWinner.toString() : null,
                     entryFee: attempt.quiz.entryFee.toString(),
                 },
             },

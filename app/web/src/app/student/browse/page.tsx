@@ -89,7 +89,7 @@ export default function BrowseQuizzesPage() {
     setRequesting(quizId)
     try {
       await apiService.accessRequest.create({ quizId })
-      showToast('Access requested! Waiting for teacher approval.', 'success')
+      showToast('✅ Access approved! Proceed to pay the entry fee to start.', 'success')
       await fetchAll()
     } catch (err) {
       showToast(

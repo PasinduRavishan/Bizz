@@ -12,9 +12,6 @@ export class PrizeSwap extends Contract {
         return [prizePayment, answerProof, attempt];
     }
 }
-/**
- * Deploy PrizeSwap module
- */
 export async function deployPrizeSwapModule(computer, PrizeSwap) {
     return await computer.deploy(`export ${PrizeSwap}`);
 }

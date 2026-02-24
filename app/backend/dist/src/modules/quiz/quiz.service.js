@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.QuizService = void 0;
 const common_1 = require("@nestjs/common");
+const schedule_1 = require("@nestjs/schedule");
 const client_1 = require("@prisma/client");
 const computer_manager_1 = require("../../common/computer-manager");
 const ipfs_service_1 = require("../../common/ipfs.service");
@@ -48,6 +49,8 @@ function computeScore(answerCommitment, revealedAnswers, questions) {
 let QuizService = class QuizService {
     prisma;
     quizModuleId;
+    revealFailures = new Map();
+    MAX_REVEAL_FAILURES = 3;
     constructor() {
         this.prisma = new client_1.PrismaClient();
         this.quizModuleId = process.env.QUIZ_MODULE_ID;
@@ -85,7 +88,7 @@ let QuizService = class QuizService {
         try {
             const teacherComputer = computer_manager_1.computerManager.getComputer(teacher.encryptedMnemonic);
             const quizHelper = new Quiz_deploy_js_1.QuizHelper(teacherComputer, this.quizModuleId);
-            const initialSupply = createQuizDto.initialSupply || 1;
+            const initialSupply = createQuizDto.initialSupply || 1000;
             const quizParams = {
                 teacherPubKey: teacher.publicKey,
                 initialSupply: BigInt(initialSupply),
@@ -173,7 +176,7 @@ let QuizService = class QuizService {
                 prizePool: createQuizUIDto.prizePool,
                 passThreshold: createQuizUIDto.passThreshold,
                 deadline: new Date(createQuizUIDto.deadline).getTime(),
-                initialSupply: createQuizUIDto.initialSupply || 1,
+                initialSupply: createQuizUIDto.initialSupply || 1000,
             };
             const result = await this.create(teacherId, blockchainDto);
             await this.prisma.quiz.update({
@@ -228,6 +231,7 @@ let QuizService = class QuizService {
                 ...quiz,
                 entryFee: quiz.entryFee.toString(),
                 prizePool: quiz.prizePool.toString(),
+                prizePerWinner: quiz.prizePerWinner != null ? quiz.prizePerWinner.toString() : null,
             })),
         };
     }
@@ -270,6 +274,7 @@ let QuizService = class QuizService {
                     teacher: safeTeacher,
                     entryFee: dbQuiz.entryFee.toString(),
                     prizePool: dbQuiz.prizePool.toString(),
+                    prizePerWinner: dbQuiz.prizePerWinner != null ? dbQuiz.prizePerWinner.toString() : null,
                     blockchainStatus: quizContract.status,
                     answerHashes: quizContract.status === 'revealed' ? quizContract.answerHashes : undefined,
                     revealedAnswers: quizContract.status === 'revealed' ? quizContract.revealedAnswers : undefined,
@@ -286,6 +291,7 @@ let QuizService = class QuizService {
                     teacher: safeTeacher,
                     entryFee: dbQuiz.entryFee.toString(),
                     prizePool: dbQuiz.prizePool.toString(),
+                    prizePerWinner: dbQuiz.prizePerWinner != null ? dbQuiz.prizePerWinner.toString() : null,
                     warning: 'Cached data',
                 },
             };
@@ -329,19 +335,27 @@ let QuizService = class QuizService {
             console.log(`  Using ${answers.length} answers from ${revealDto.answers?.length ? 'request body' : 'database'}`);
             const [latestQuizRev] = await computer.query({ ids: [dbQuiz.contractId] });
             const syncedQuiz = await computer.sync(latestQuizRev);
-            if (syncedQuiz.status !== 'active')
+            let contractRev = syncedQuiz._rev;
+            if (syncedQuiz.status === 'revealed') {
+                console.log('ℹ️  Quiz already revealed on blockchain — syncing DB and pre-grading...');
+            }
+            else if (syncedQuiz.status !== 'active') {
                 throw new common_1.BadRequestException(`Status is ${syncedQuiz.status}`);
-            const { tx: revealTx } = await computer.encodeCall({
-                target: syncedQuiz,
-                property: 'revealAnswers',
-                args: [answers, salt],
-                mod: process.env.QUIZ_MODULE_ID
-            });
-            await computer.broadcast(revealTx);
-            await new Promise(resolve => setTimeout(resolve, 200));
-            await this.mineBlocks(computer, 1);
-            const [updatedQuizRev] = await computer.query({ ids: [dbQuiz.contractId] });
-            const updatedQuiz = await computer.sync(updatedQuizRev);
+            }
+            else {
+                const { tx: revealTx } = await computer.encodeCall({
+                    target: syncedQuiz,
+                    property: 'revealAnswers',
+                    args: [answers, salt],
+                    mod: process.env.QUIZ_MODULE_ID
+                });
+                await computer.broadcast(revealTx);
+                await new Promise(resolve => setTimeout(resolve, 200));
+                await this.mineBlocks(computer, 1);
+                const [updatedQuizRev] = await computer.query({ ids: [dbQuiz.contractId] });
+                const updatedQuiz = await computer.sync(updatedQuizRev);
+                contractRev = updatedQuiz._rev;
+            }
             console.log('✅ Answers revealed on blockchain');
             await this.prisma.quiz.update({
                 where: { id: quizId },
@@ -349,12 +363,12 @@ let QuizService = class QuizService {
                     status: 'REVEALED',
                     revealedAnswers: answers,
                     salt,
-                    contractRev: updatedQuiz._rev,
+                    contractRev,
                 },
             });
             const quizWithQuestions = await this.prisma.quiz.findUnique({
                 where: { id: quizId },
-                select: { questions: true, passThreshold: true },
+                select: { questions: true, passThreshold: true, prizePool: true },
             });
             const questions = quizWithQuestions?.questions;
             const passThreshold = quizWithQuestions?.passThreshold ?? 70;
@@ -377,17 +391,81 @@ let QuizService = class QuizService {
                     console.warn(`  ⚠️  Could not pre-grade attempt ${attempt.id}: ${e.message}`);
                 }
             }
+            if (passedCount > 0 && quizWithQuestions?.prizePool) {
+                const prizePerWinner = quizWithQuestions.prizePool / BigInt(passedCount);
+                await this.prisma.quiz.update({
+                    where: { id: quizId },
+                    data: { winnerCount: passedCount, prizePerWinner },
+                });
+                console.log(`💰 Multi-winner distribution: ${passedCount} winner(s) × ${prizePerWinner.toString()} sats each (pool: ${quizWithQuestions.prizePool.toString()} sats)`);
+            }
+            else {
+                await this.prisma.quiz.update({
+                    where: { id: quizId },
+                    data: { winnerCount: 0 },
+                });
+                console.log('ℹ️  No passing students — prize pool not distributed');
+            }
             console.log(`✅ Pre-graded ${gradedCount} attempt(s): ${passedCount} passed, ${gradedCount - passedCount} failed`);
             return {
                 success: true,
                 message: 'Answers revealed',
                 gradedAttempts: gradedCount,
                 passedAttempts: passedCount,
+                winnerCount: passedCount,
+                prizePerWinner: passedCount > 0 && quizWithQuestions?.prizePool
+                    ? (quizWithQuestions.prizePool / BigInt(passedCount)).toString()
+                    : null,
             };
         }
         catch (error) {
             console.error('Reveal error:', error);
             throw new common_1.InternalServerErrorException(`Reveal failed: ${error.message}`);
+        }
+    }
+    async autoRevealExpiredQuizzes() {
+        try {
+            const expiredQuizzes = await this.prisma.quiz.findMany({
+                where: {
+                    status: 'ACTIVE',
+                    deadline: { lt: new Date() },
+                    teacher: {
+                        encryptedMnemonic: { not: null },
+                    },
+                },
+                include: {
+                    teacher: {
+                        select: { id: true, encryptedMnemonic: true, address: true },
+                    },
+                },
+            });
+            if (expiredQuizzes.length === 0)
+                return;
+            console.log(`⏰ Auto-reveal: found ${expiredQuizzes.length} eligible expired quiz(zes)`);
+            for (const quiz of expiredQuizzes) {
+                const failures = this.revealFailures.get(quiz.id) ?? 0;
+                if (failures >= this.MAX_REVEAL_FAILURES) {
+                    console.warn(`⚠️  Quiz ${quiz.id} ("${quiz.title}") failed auto-reveal ${failures} time(s) — ` +
+                        `marking COMPLETED to stop retrying.`);
+                    await this.prisma.quiz.update({ where: { id: quiz.id }, data: { status: 'COMPLETED' } });
+                    this.revealFailures.delete(quiz.id);
+                    continue;
+                }
+                try {
+                    console.log(`🔓 Auto-revealing quiz: ${quiz.id} ("${quiz.title}") — attempt ${failures + 1}/${this.MAX_REVEAL_FAILURES}`);
+                    await this.revealAnswers(quiz.id, quiz.teacher.id, { answers: [], salt: '' });
+                    this.revealFailures.delete(quiz.id);
+                    console.log(`✅ Auto-reveal complete for quiz: ${quiz.id}`);
+                }
+                catch (err) {
+                    const newCount = failures + 1;
+                    this.revealFailures.set(quiz.id, newCount);
+                    console.error(`❌ Auto-reveal failed for quiz ${quiz.id} (${newCount}/${this.MAX_REVEAL_FAILURES}):`, err.message);
+                }
+            }
+        }
+        catch (err) {
+            console.error('❌ Auto-reveal cron job error:', err.message);
         }
     }
     async remove(quizId, teacherId) {
@@ -409,6 +487,12 @@ let QuizService = class QuizService {
     }
 };
 exports.QuizService = QuizService;
+__decorate([
+    (0, schedule_1.Cron)(schedule_1.CronExpression.EVERY_MINUTE),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], QuizService.prototype, "autoRevealExpiredQuizzes", null);
 exports.QuizService = QuizService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [])

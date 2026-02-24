@@ -33,6 +33,8 @@ export declare class QuizController {
             txHash: string | null;
             moduleSpecifier: string | null;
             questionCount: number;
+            winnerCount: number;
+            prizePerWinner: bigint | null;
             status: import(".prisma/client").$Enums.QuizStatus;
             revealedAnswers: import("@prisma/client/runtime/library").JsonValue | null;
             teacherId: string;
@@ -69,6 +71,8 @@ export declare class QuizController {
             txHash: string | null;
             moduleSpecifier: string | null;
             questionCount: number;
+            winnerCount: number;
+            prizePerWinner: bigint | null;
             status: import(".prisma/client").$Enums.QuizStatus;
             revealedAnswers: import("@prisma/client/runtime/library").JsonValue | null;
             teacherId: string;
@@ -79,6 +83,7 @@ export declare class QuizController {
         quizzes: {
             entryFee: string;
             prizePool: string;
+            prizePerWinner: string | null;
             attempts: {
                 id: string;
                 status: import(".prisma/client").$Enums.AttemptStatus;
@@ -116,6 +121,7 @@ export declare class QuizController {
             txHash: string | null;
             moduleSpecifier: string | null;
             questionCount: number;
+            winnerCount: number;
             status: import(".prisma/client").$Enums.QuizStatus;
             revealedAnswers: import("@prisma/client/runtime/library").JsonValue | null;
             teacherId: string;
@@ -131,6 +137,7 @@ export declare class QuizController {
             };
             entryFee: string;
             prizePool: string;
+            prizePerWinner: string | null;
             blockchainStatus: any;
             answerHashes: any;
             revealedAnswers: any;
@@ -168,6 +175,7 @@ export declare class QuizController {
             txHash: string | null;
             moduleSpecifier: string | null;
             questionCount: number;
+            winnerCount: number;
             status: import(".prisma/client").$Enums.QuizStatus;
             teacherId: string;
         };
@@ -181,6 +189,7 @@ export declare class QuizController {
             };
             entryFee: string;
             prizePool: string;
+            prizePerWinner: string | null;
             warning: string;
             attempts: {
                 id: string;
@@ -217,6 +226,7 @@ export declare class QuizController {
             txHash: string | null;
             moduleSpecifier: string | null;
             questionCount: number;
+            winnerCount: number;
             status: import(".prisma/client").$Enums.QuizStatus;
             revealedAnswers: import("@prisma/client/runtime/library").JsonValue | null;
             teacherId: string;
@@ -227,6 +237,8 @@ export declare class QuizController {
         message: string;
         gradedAttempts: number;
         passedAttempts: number;
+        winnerCount: number;
+        prizePerWinner: string | null;
     }>;
     remove(id: string, req: any): Promise<{
         success: boolean;

@@ -87,6 +87,10 @@ model Quiz {
   entryFee          BigInt
   passThreshold     Int                // 0-100
 
+  // Multi-winner prize distribution (calculated at reveal time)
+  winnerCount       Int      @default(0)   // number of passing students
+  prizePerWinner    BigInt?               // = prizePool / winnerCount (null until revealed)
+
   // Timing
   deadline              DateTime
   teacherRevealDeadline DateTime
@@ -150,6 +154,7 @@ model QuizAttempt {
   prizePaymentId  String?            // Prize Payment contract ID (if winner)
   prizePaymentRev String?            // Prize Payment _rev (for claiming)
   swapTxHex       String?            // Partial SWAP transaction hex (created by teacher)
+  prizeAmount     BigInt?            // Actual prize awarded (= prizePerWinner at verify time)
 
   // State
   status          AttemptStatus @default(CREATED)

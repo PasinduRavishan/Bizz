@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
@@ -23,6 +24,9 @@ import { WalletModule } from './modules/wallet/wallet.module';
     ConfigModule.forRoot({
       isGlobal: true, // Makes ConfigService available everywhere
     }),
+
+    // Scheduler for auto-reveal cron jobs
+    ScheduleModule.forRoot(),
 
     // Feature modules
     AuthModule,

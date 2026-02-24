@@ -98,38 +98,6 @@ export declare class AccessRequestController {
             startedAt: Date | null;
         }[];
     }>;
-    approveRequest(id: string, req: any): Promise<{
-        success: boolean;
-        request: {
-            quiz: {
-                entryFee: string;
-                id: string;
-                title: string | null;
-            };
-            student: {
-                email: string | null;
-                name: string | null;
-                id: string;
-            };
-            id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            status: import(".prisma/client").$Enums.QuizAccessStatus;
-            quizId: string;
-            studentId: string;
-            partialExecTx: import("@prisma/client/runtime/library").JsonValue | null;
-            approvedAt: Date | null;
-            approvedBy: string | null;
-            quizTokenId: string | null;
-            entryPaymentId: string | null;
-            paidAt: Date | null;
-            feeClaimedAt: Date | null;
-            attemptId: string | null;
-            startedAt: Date | null;
-        };
-        partialTxHex: any;
-        partialTx: any;
-    }>;
     completePayment(id: string, req: any): Promise<{
         success: boolean;
         message: string;

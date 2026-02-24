@@ -1,9 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common'
 import { PrismaClient } from '@prisma/client'
-import { Computer } from '@bitcoin-computer/lib'
+import { Computer, Transaction } from '@bitcoin-computer/lib'
 import { SubmitCommitmentDto } from './dto/submit-commitment.dto'
 import { VerifyAttemptDto } from './dto/verify-attempt.dto'
 import { computerManager } from '../../common/computer-manager'
+
+const { SIGHASH_SINGLE, SIGHASH_ANYONECANPAY } = Transaction
 
 /**
  * QuizAttemptService
@@ -297,6 +299,20 @@ export class QuizAttemptService {
         },
       })
 
+      // ── AUTO-CREATE PRIZE PAYMENT + SWAP TX for passing students ──────────
+      // Teacher no longer needs to manually do this — it happens automatically here
+      if (passed) {
+        console.log('🏆 Student passed! Auto-creating prize payment and swap tx...')
+        try {
+          await this.autoCreatePrizePaymentAndSwap(attemptId, studentId)
+          console.log('✅ Prize payment and swap tx auto-created')
+        } catch (prizeError) {
+          // Non-fatal: log but don't fail the verification response
+          // Student can still see their result; prize setup can be retried if needed
+          console.error('⚠️  Auto prize creation failed (non-fatal):', (prizeError as Error).message)
+        }
+      }
+
       return {
         message: 'Attempt verified successfully',
         attemptId: dbAttempt.contractId,
@@ -308,6 +324,177 @@ export class QuizAttemptService {
       console.error('Error verifying attempt:', error)
       throw new BadRequestException(`Failed to verify attempt: ${error.message}`)
     }
+  }
+
+  /**
+   * Auto-creates AnswerProof → Prize Payment → Swap TX for a verified passing attempt.
+   *
+   * Called internally from verifyAttempt() — teacher never needs to click anything.
+   * All blockchain ops run with the teacher's computer (prize payment) and
+   * student's computer (answer proof), then the partial swap tx is stored in DB.
+   */
+  private async autoCreatePrizePaymentAndSwap(attemptId: string, studentId: string): Promise<void> {
+    const attempt = await this.prisma.quizAttempt.findUnique({
+      where: { id: attemptId },
+      include: {
+        student: {
+          select: {
+            id: true,
+            encryptedMnemonic: true,
+            publicKey: true,
+          },
+        },
+        quiz: {
+          select: {
+            id: true,
+            contractId: true,
+            teacherId: true,
+            prizePool: true,
+            prizePerWinner: true,
+            winnerCount: true,
+            questions: true,
+            passThreshold: true,
+          },
+        },
+      },
+    })
+
+    if (!attempt) throw new Error('Attempt not found')
+    if (!attempt.passed) throw new Error('Attempt did not pass')
+
+    const teacher = await this.prisma.user.findUnique({
+      where: { id: attempt.quiz.teacherId },
+      select: { encryptedMnemonic: true, publicKey: true },
+    })
+
+    if (!teacher || !teacher.encryptedMnemonic) throw new Error('Teacher wallet not configured')
+
+    const studentComputer = computerManager.getComputer(attempt.student.encryptedMnemonic)
+    const teacherComputer = computerManager.getComputer(teacher.encryptedMnemonic)
+
+    // STEP A: Create AnswerProof (student side)
+    console.log('  📜 Auto-creating AnswerProof...')
+
+    // Reconstruct answers from commitment
+    let answers: string[]
+    const commitment = attempt.answerCommitment
+    if (!commitment) throw new Error('No answer commitment on attempt')
+
+    const match = commitment.match(/commitment-(\[[\d,\s]+\])-/)
+    if (!match) throw new Error(`Cannot parse commitment: ${commitment.substring(0, 60)}`)
+
+    const studentIndices: number[] = JSON.parse(match[1])
+    const questions = attempt.quiz.questions as Array<{ question: string; options: string[] }> | null
+
+    if (!questions || questions.length === 0) {
+      answers = studentIndices.map(idx => String(idx))
+    } else {
+      answers = studentIndices.map((idx, i) => {
+        const q = questions[i]
+        return (q && q.options && q.options[idx] !== undefined) ? q.options[idx] : String(idx)
+      })
+    }
+
+    const score = attempt.score ?? 0
+    const passed = attempt.passed ?? false
+
+    const AnswerProofHelper = (await import('@bizz/contracts/deploy/AnswerProof.deploy.js')).AnswerProofHelper
+    const proofHelper = new AnswerProofHelper(studentComputer, process.env.ANSWER_PROOF_MODULE_ID)
+
+    const { tx: proofTx, effect: proofEffect } = await proofHelper.createAnswerProof({
+      student: attempt.student.publicKey,
+      quizRef: attempt.quiz.contractId,
+      attemptRef: attempt.contractId,
+      answers,
+      score,
+      passed,
+    })
+
+    await studentComputer.broadcast(proofTx)
+    await new Promise(resolve => setTimeout(resolve, 200))
+    await this.mineBlocks(studentComputer, 1)
+
+    const answerProof = proofEffect.res
+    console.log(`  ✅ AnswerProof created: ${answerProof._id}`)
+
+    // Store answerProofId immediately
+    await this.prisma.quizAttempt.update({
+      where: { id: attemptId },
+      data: { answerProofId: answerProof._id },
+    })
+
+    // STEP B: Create Prize Payment (teacher side) with correct per-winner amount
+    // prizePerWinner is computed by revealAnswers() before any student can call verifyAttempt()
+    // (verifyAttempt requires quiz.status === 'REVEALED', which is set by revealAnswers()).
+    // If for any reason prizePerWinner is not set, fall back to full prizePool.
+    const prizeAmount: bigint = attempt.quiz.prizePerWinner != null
+      ? attempt.quiz.prizePerWinner
+      : attempt.quiz.prizePool
+
+    const winnerCount = attempt.quiz.winnerCount ?? 1
+    console.log(`  💰 Auto-creating Prize Payment: ${prizeAmount.toString()} sats (${winnerCount} winner(s) sharing pool of ${attempt.quiz.prizePool.toString()} sats)`)
+
+    const PaymentHelper = (await import('@bizz/contracts/deploy/Payment.deploy.js')).PaymentHelper
+    const paymentHelper = new PaymentHelper(teacherComputer, process.env.PAYMENT_MODULE_ID)
+
+    const { tx: prizeTx, effect: prizeEffect } = await paymentHelper.createPayment({
+      recipient: attempt.student.publicKey,
+      amount: prizeAmount,
+      purpose: 'Prize Payment',
+      reference: attempt.contractId,
+    })
+
+    await teacherComputer.broadcast(prizeTx)
+    await new Promise(resolve => setTimeout(resolve, 200))
+    await this.mineBlocks(teacherComputer, 1)
+
+    const prizePayment = prizeEffect.res
+    console.log(`  ✅ Prize Payment created: ${prizePayment._id} (amount: ${prizeAmount.toString()} sats)`)
+
+    // Store prizePaymentId AND the actual prizeAmount for this attempt
+    await this.prisma.quizAttempt.update({
+      where: { id: attemptId },
+      data: {
+        prizePaymentId: prizePayment._id,
+        prizePaymentRev: prizePayment._rev,
+        prizeAmount,
+      },
+    })
+
+    // STEP C: Create partial SWAP tx (teacher side)
+    console.log('  🔄 Auto-creating partial SWAP tx...')
+
+    const PrizeSwapHelper = (await import('@bizz/contracts/deploy/PrizeSwap.deploy.js')).PrizeSwapHelper
+    const swapHelper = new PrizeSwapHelper(teacherComputer, process.env.PRIZE_SWAP_MODULE_ID)
+
+    // Sync all contracts to latest state
+    const [prizePaymentRev] = await teacherComputer.query({ ids: [prizePayment._id] })
+    const syncedPrizePayment = await teacherComputer.sync(prizePaymentRev)
+
+    const [answerProofRev] = await teacherComputer.query({ ids: [answerProof._id] })
+    const syncedAnswerProof = await teacherComputer.sync(answerProofRev)
+
+    // We need the attempt rev from teacher's perspective
+    const [attemptRev] = await teacherComputer.query({ ids: [attempt.contractId] })
+    const syncedAttempt = await teacherComputer.sync(attemptRev)
+
+    const { tx: swapTx } = await swapHelper.createPrizeSwapTx(
+      syncedPrizePayment,
+      syncedAnswerProof,
+      syncedAttempt,
+      SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
+    )
+
+    const partialSwapTxHex = swapTx.toHex()
+    console.log('  ✅ Partial SWAP tx created')
+
+    // Store swap tx hex
+    await this.prisma.quizAttempt.update({
+      where: { id: attemptId },
+      data: { swapTxHex: partialSwapTxHex },
+    })
+
+    console.log('✅ All prize components auto-created — student can now claim prize!')
   }
 
   /**
@@ -327,6 +514,8 @@ export class QuizAttemptService {
             deadline: true,
             passThreshold: true,
             prizePool: true,
+            prizePerWinner: true,
+            winnerCount: true,
             entryFee: true,
             questionCount: true,
           },
@@ -338,9 +527,11 @@ export class QuizAttemptService {
     return {
       attempts: attempts.map(a => ({
         ...a,
+        prizeAmount: a.prizeAmount != null ? a.prizeAmount.toString() : null,
         quiz: {
           ...a.quiz,
           prizePool: a.quiz.prizePool.toString(),
+          prizePerWinner: a.quiz.prizePerWinner != null ? a.quiz.prizePerWinner.toString() : null,
           entryFee: a.quiz.entryFee.toString(),
         },
       })),
@@ -364,6 +555,8 @@ export class QuizAttemptService {
             deadline: true,
             passThreshold: true,
             prizePool: true,
+            prizePerWinner: true,
+            winnerCount: true,
             entryFee: true,
             questionCount: true,
             revealedAnswers: true,
@@ -390,9 +583,11 @@ export class QuizAttemptService {
     return {
       attempt: {
         ...attempt,
+        prizeAmount: attempt.prizeAmount != null ? attempt.prizeAmount.toString() : null,
         quiz: {
           ...attempt.quiz,
           prizePool: attempt.quiz.prizePool.toString(),
+          prizePerWinner: attempt.quiz.prizePerWinner != null ? attempt.quiz.prizePerWinner.toString() : null,
           entryFee: attempt.quiz.entryFee.toString(),
         },
       },

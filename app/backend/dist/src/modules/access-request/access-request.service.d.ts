@@ -3,6 +3,7 @@ export declare class AccessRequestService {
     private prisma;
     private quizAccessModuleId;
     private paymentModuleId;
+    private quizModuleId;
     constructor();
     private mineBlocks;
     requestAccess(studentId: string, createDto: CreateAccessRequestDto): Promise<{

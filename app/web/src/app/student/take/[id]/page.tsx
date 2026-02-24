@@ -213,18 +213,23 @@ export default function TakeQuizPage() {
     fetchQuiz()
   }, [fetchQuiz])
 
-  // Test Step 4: Student Requests Access
+  // Student Requests Access — approval is now AUTOMATIC.
+  // The backend immediately creates the partial exec tx and returns APPROVED status.
+  // We go straight to ready-to-pay.
   const handleRequestAccess = async () => {
     if (!quiz) return
     try {
       setActionLoading(true)
       setFlowStep('requesting')
-      setStatusMessage('Requesting access to quiz...')
+      setStatusMessage('Setting up quiz access...')
       setError(null)
       const result = await apiService.accessRequest.create({ quizId: quiz.id })
       setAccessRequestId(result.request.id)
-      setStatusMessage('Access requested! Waiting for teacher approval...')
-      setFlowStep('waiting-approval')
+
+      // Backend auto-approves — result.request.status should be 'APPROVED'
+      // Go directly to the pay step (no waiting-approval screen needed)
+      setStatusMessage('Access ready! Proceeding to payment...')
+      setFlowStep('ready-to-pay')
     } catch (err) {
       console.error('Request access error:', err)
       setError(err instanceof Error ? err.message : 'Failed to request access')
@@ -343,10 +348,9 @@ export default function TakeQuizPage() {
     return `${hours}h ${minutes}m`
   }
 
-  // Flow progress configuration
+  // Flow progress configuration — Approval is now instant/automatic, so removed from steps
   const flowSteps = [
-    { id: 'request', label: 'Request Access', description: 'Ask teacher for permission', icon: '📝' },
-    { id: 'approve', label: 'Approval', description: 'Wait for teacher', icon: '👨‍🏫' },
+    { id: 'request', label: 'Get Access', description: 'Instant — auto-approved', icon: '📝' },
     { id: 'pay', label: 'Pay Fee', description: 'Entry fee payment', icon: '💰' },
     { id: 'start', label: 'Start Quiz', description: 'Begin answering', icon: '🎯' },
     { id: 'submit', label: 'Submit', description: 'Send answers', icon: '✅' },
@@ -355,7 +359,6 @@ export default function TakeQuizPage() {
   const getCompletedSteps = () => {
     const completed: string[] = []
     if (accessRequestId) completed.push('request')
-    if (flowStep !== 'view-quiz' && flowStep !== 'requesting' && flowStep !== 'waiting-approval') completed.push('approve')
     if (quizTokenId) completed.push('pay')
     if (attemptId) completed.push('start')
     if (flowStep === 'complete') completed.push('submit')
@@ -363,8 +366,7 @@ export default function TakeQuizPage() {
   }
 
   const getCurrentFlowStepId = () => {
-    if (flowStep === 'view-quiz' || flowStep === 'requesting') return 'request'
-    if (flowStep === 'waiting-approval') return 'approve'
+    if (flowStep === 'view-quiz' || flowStep === 'requesting' || flowStep === 'waiting-approval') return 'request'
     if (flowStep === 'ready-to-pay' || flowStep === 'paying') return 'pay'
     if (flowStep === 'ready-to-start' || flowStep === 'starting') return 'start'
     if (flowStep === 'taking-quiz' || flowStep === 'submitting') return 'submit'
@@ -461,11 +463,10 @@ export default function TakeQuizPage() {
             <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-6">
               <h3 className="font-bold text-gray-900 dark:text-white mb-3">📋 Quiz Flow:</h3>
               <ol className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
-                <li>1. Request access</li>
-                <li>2. Wait for teacher approval</li>
-                <li>3. Pay {formatSatoshis(quiz.entryFee)} sats entry fee</li>
-                <li>4. Start quiz & submit answers</li>
-                <li>5. Win {formatSatoshis(quiz.prizePool)} sats if you score ≥ {quiz.passThreshold}%</li>
+                <li>1. <strong>Request access</strong> — instant, no waiting</li>
+                <li>2. <strong>Pay {formatSatoshis(quiz.entryFee)} sats</strong> entry fee</li>
+                <li>3. <strong>Start quiz</strong> &amp; submit your answers</li>
+                <li>4. <strong>Win {formatSatoshis(quiz.prizePool)} sats</strong> if you score ≥ {quiz.passThreshold}%</li>
               </ol>
             </div>
 
@@ -488,18 +489,18 @@ export default function TakeQuizPage() {
     )
   }
 
-  // Waiting for Teacher Approval
+  // Setting up access (brief transition state — should resolve instantly with auto-approve)
   if (flowStep === 'waiting-approval') {
     return (
       <main className="container mx-auto px-4 py-8 max-w-3xl">
         <Card>
           <CardBody className="text-center py-12">
-            <div className="text-6xl mb-4">⏳</div>
+            <div className="w-14 h-14 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-6" />
             <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-              Waiting for Teacher Approval
+              Setting Up Access…
             </h3>
             <p className="text-gray-600 dark:text-gray-400 mb-6">
-              Your access request is pending. The teacher will approve it shortly.
+              Access is being prepared automatically — this is usually instant.
             </p>
             <Button onClick={fetchQuiz} variant="outline">
               Check Status

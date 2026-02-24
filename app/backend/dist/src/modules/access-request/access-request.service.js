@@ -47,15 +47,20 @@ let AccessRequestService = class AccessRequestService {
     prisma;
     quizAccessModuleId;
     paymentModuleId;
+    quizModuleId;
     constructor() {
         this.prisma = new client_1.PrismaClient();
         this.quizAccessModuleId = process.env.QUIZ_ACCESS_MODULE_ID;
         this.paymentModuleId = process.env.PAYMENT_MODULE_ID;
+        this.quizModuleId = process.env.QUIZ_MODULE_ID;
         if (!this.quizAccessModuleId) {
             console.warn('⚠️ QUIZ_ACCESS_MODULE_ID not set in .env');
         }
         if (!this.paymentModuleId) {
             console.warn('⚠️ PAYMENT_MODULE_ID not set in .env');
+        }
+        if (!this.quizModuleId) {
+            console.warn('⚠️ QUIZ_MODULE_ID not set in .env');
         }
     }
     async mineBlocks(computer, count = 1) {
@@ -81,7 +86,7 @@ let AccessRequestService = class AccessRequestService {
             where: { id: createDto.quizId },
             include: {
                 teacher: {
-                    select: { id: true, publicKey: true },
+                    select: { id: true, publicKey: true, encryptedMnemonic: true },
                 },
             },
         });
@@ -91,11 +96,14 @@ let AccessRequestService = class AccessRequestService {
             throw new common_1.BadRequestException('Quiz is not active');
         if (new Date() > quiz.deadline)
             throw new common_1.BadRequestException('Quiz deadline passed');
+        if (!quiz.teacher.encryptedMnemonic || !quiz.teacher.publicKey) {
+            throw new common_1.BadRequestException('Teacher wallet not configured');
+        }
         const existing = await this.prisma.quizAccessRequest.findFirst({
             where: {
                 quizId: createDto.quizId,
                 studentId,
-                status: { in: ['PENDING', 'APPROVED', 'PAID'] },
+                status: { in: ['PENDING', 'APPROVED', 'PAID', 'FEE_CLAIMED', 'STARTED'] },
             },
         });
         if (existing) {
@@ -107,34 +115,88 @@ let AccessRequestService = class AccessRequestService {
                 studentId,
                 status: 'PENDING',
             },
-            include: {
-                quiz: {
-                    select: {
-                        id: true,
-                        title: true,
-                        symbol: true,
-                        entryFee: true,
-                    },
-                },
-                student: {
-                    select: {
-                        id: true,
-                        name: true,
-                        email: true,
-                    },
-                },
-            },
         });
-        return {
-            success: true,
-            request: {
-                ...request,
-                quiz: {
-                    ...request.quiz,
-                    entryFee: request.quiz.entryFee.toString(),
+        try {
+            console.log(`🤖 Auto-approving request ${request.id} for student ${studentId}...`);
+            const teacherComputer = computer_manager_1.computerManager.getComputer(quiz.teacher.encryptedMnemonic);
+            const teacherPubKey = quiz.teacher.publicKey;
+            console.log('🔍 Syncing quiz template...');
+            const [currentQuizRev] = await teacherComputer.query({ ids: [quiz.contractId] });
+            if (!currentQuizRev)
+                throw new Error('Quiz contract not found on blockchain');
+            const quizContract = await teacherComputer.sync(currentQuizRev);
+            console.log('🪙 Minting quiz token on-demand...');
+            const { tx: mintTx, effect: mintEffect } = await teacherComputer.encodeCall({
+                target: quizContract,
+                property: 'mint',
+                args: [teacherPubKey, 1n],
+                mod: this.quizModuleId,
+            });
+            await teacherComputer.broadcast(mintTx);
+            await new Promise(resolve => setTimeout(resolve, 200));
+            await this.mineBlocks(teacherComputer, 1);
+            const mintedToken = mintEffect.res;
+            console.log(`✅ Quiz token minted: ${mintedToken._id}`);
+            const [newQuizRev] = await teacherComputer.query({ ids: [quiz.contractId] });
+            if (newQuizRev) {
+                await this.prisma.quiz.update({
+                    where: { id: quiz.id },
+                    data: { contractRev: newQuizRev },
+                });
+                console.log(`📝 Updated quiz contractRev after mint`);
+            }
+            const accessHelper = new QuizAccess_deploy_js_1.QuizAccessHelper(teacherComputer, this.quizAccessModuleId);
+            const paymentMock = new PaymentMock(BigInt(quiz.entryFee), teacherPubKey, 'Entry Fee', quiz.contractId);
+            console.log('📝 Creating partial exec tx with minted token...');
+            const { tx: partialExecTx } = await accessHelper.createQuizAccessTx(mintedToken, paymentMock, SIGHASH_SINGLE | SIGHASH_ANYONECANPAY);
+            const partialTxHex = partialExecTx.toHex ? partialExecTx.toHex() : partialExecTx.toString();
+            const approvedRequest = await this.prisma.quizAccessRequest.update({
+                where: { id: request.id },
+                data: {
+                    status: 'APPROVED',
+                    approvedAt: new Date(),
+                    approvedBy: quiz.teacherId,
+                    partialExecTx: {
+                        txHex: partialTxHex,
+                        mintedTokenId: mintedToken._id,
+                        mintedTokenRev: mintedToken._rev,
+                    },
                 },
-            },
-        };
+                include: {
+                    quiz: {
+                        select: {
+                            id: true,
+                            title: true,
+                            symbol: true,
+                            entryFee: true,
+                        },
+                    },
+                    student: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                        },
+                    },
+                },
+            });
+            console.log(`✅ Request auto-approved with on-demand minted token: ${request.id}`);
+            return {
+                success: true,
+                request: {
+                    ...approvedRequest,
+                    quiz: {
+                        ...approvedRequest.quiz,
+                        entryFee: approvedRequest.quiz.entryFee.toString(),
+                    },
+                },
+            };
+        }
+        catch (error) {
+            console.error('❌ Auto-approval failed, removing pending request:', error);
+            await this.prisma.quizAccessRequest.delete({ where: { id: request.id } }).catch(() => { });
+            throw new common_1.InternalServerErrorException(`Failed to process access request: ${error.message}`);
+        }
     }
     async approveRequest(requestId, teacherId) {
         const request = await this.prisma.quizAccessRequest.findUnique({
@@ -165,15 +227,41 @@ let AccessRequestService = class AccessRequestService {
             throw new common_1.ForbiddenException('Only quiz creator can approve');
         if (request.status !== 'PENDING')
             throw new common_1.BadRequestException(`Request is ${request.status}`);
+        if (!request.quiz.teacher.encryptedMnemonic || !request.quiz.teacher.publicKey) {
+            throw new common_1.BadRequestException('Teacher wallet not configured');
+        }
         try {
             const teacherComputer = computer_manager_1.computerManager.getComputer(request.quiz.teacher.encryptedMnemonic);
-            const quizContract = await teacherComputer.sync(request.quiz.contractRev);
+            const teacherPubKey = request.quiz.teacher.publicKey;
+            console.log('🔍 Syncing quiz template...');
+            const [currentQuizRev] = await teacherComputer.query({ ids: [request.quiz.contractId] });
+            if (!currentQuizRev)
+                throw new Error('Quiz contract not found on blockchain');
+            const quizContract = await teacherComputer.sync(currentQuizRev);
+            console.log('🪙 Minting quiz token on-demand...');
+            const { tx: mintTx, effect: mintEffect } = await teacherComputer.encodeCall({
+                target: quizContract,
+                property: 'mint',
+                args: [teacherPubKey, 1n],
+                mod: this.quizModuleId,
+            });
+            await teacherComputer.broadcast(mintTx);
+            await new Promise(resolve => setTimeout(resolve, 200));
+            await this.mineBlocks(teacherComputer, 1);
+            const mintedToken = mintEffect.res;
+            console.log(`✅ Quiz token minted: ${mintedToken._id}`);
+            const [newQuizRev] = await teacherComputer.query({ ids: [request.quiz.contractId] });
+            if (newQuizRev) {
+                await this.prisma.quiz.update({
+                    where: { id: request.quiz.id },
+                    data: { contractRev: newQuizRev },
+                });
+                console.log(`📝 Updated quiz contractRev after mint`);
+            }
             const accessHelper = new QuizAccess_deploy_js_1.QuizAccessHelper(teacherComputer, this.quizAccessModuleId);
-            const quizId = request.quiz.contractId.includes(':') ? request.quiz.contractId.split(':')[0] : request.quiz.contractId;
-            const teacherPubKey = request.quiz.teacher.publicKey || '';
-            const paymentMock = new PaymentMock(BigInt(request.quiz.entryFee), teacherPubKey, 'Entry Fee', quizId);
-            console.log('📝 Creating partial exec tx...');
-            const { tx: partialExecTx } = await accessHelper.createQuizAccessTx(quizContract, paymentMock, SIGHASH_SINGLE | SIGHASH_ANYONECANPAY);
+            const paymentMock = new PaymentMock(BigInt(request.quiz.entryFee), teacherPubKey, 'Entry Fee', request.quiz.contractId);
+            console.log('📝 Creating partial exec tx with minted token...');
+            const { tx: partialExecTx } = await accessHelper.createQuizAccessTx(mintedToken, paymentMock, SIGHASH_SINGLE | SIGHASH_ANYONECANPAY);
             const partialTxHex = partialExecTx.toHex ? partialExecTx.toHex() : partialExecTx.toString();
             const updatedRequest = await this.prisma.quizAccessRequest.update({
                 where: { id: requestId },
@@ -183,7 +271,8 @@ let AccessRequestService = class AccessRequestService {
                     approvedBy: teacherId,
                     partialExecTx: {
                         txHex: partialTxHex,
-                        quizRev: quizContract._rev,
+                        mintedTokenId: mintedToken._id,
+                        mintedTokenRev: mintedToken._rev,
                     },
                 },
                 include: {
@@ -203,7 +292,7 @@ let AccessRequestService = class AccessRequestService {
                     },
                 },
             });
-            console.log('✅ Request approved with partial tx');
+            console.log(`✅ Request approved with on-demand minted token: ${mintedToken._id}`);
             return {
                 success: true,
                 request: {
@@ -227,11 +316,14 @@ let AccessRequestService = class AccessRequestService {
             where: { id: requestId },
             include: {
                 quiz: {
-                    select: {
-                        id: true,
-                        contractId: true,
-                        entryFee: true,
-                        teacherId: true,
+                    include: {
+                        teacher: {
+                            select: {
+                                id: true,
+                                publicKey: true,
+                                encryptedMnemonic: true,
+                            },
+                        },
                     },
                 },
                 student: {
@@ -250,20 +342,16 @@ let AccessRequestService = class AccessRequestService {
         if (request.status !== 'APPROVED')
             throw new common_1.BadRequestException(`Request is ${request.status}`);
         if (!request.partialExecTx)
-            throw new common_1.BadRequestException('No partial tx found');
+            throw new common_1.BadRequestException('No partial tx found — request may need re-approval');
+        if (!request.quiz.teacher?.publicKey) {
+            throw new common_1.BadRequestException('Teacher wallet not configured');
+        }
         try {
             const studentComputer = computer_manager_1.computerManager.getComputer(request.student.encryptedMnemonic);
-            const teacher = await this.prisma.user.findUnique({
-                where: { id: request.quiz.teacherId },
-                select: { publicKey: true },
-            });
             console.log('💰 Creating entry fee payment...');
-            if (!teacher || !teacher.publicKey) {
-                throw new common_1.BadRequestException("Teacher wallet not configured");
-            }
             const paymentHelper = new Payment_deploy_js_1.PaymentHelper(studentComputer, this.paymentModuleId);
             const { tx: paymentTx, effect: paymentEffect } = await paymentHelper.createPayment({
-                recipient: teacher.publicKey,
+                recipient: request.quiz.teacher.publicKey,
                 amount: request.quiz.entryFee,
                 purpose: 'Entry Fee',
                 reference: request.quiz.contractId,
@@ -273,7 +361,7 @@ let AccessRequestService = class AccessRequestService {
             await this.mineBlocks(studentComputer, 1);
             const entryPayment = paymentEffect.res;
             console.log(`✅ Payment created: ${entryPayment._id}`);
-            console.log('🔗 Updating partial tx with real payment...');
+            console.log('🔗 Completing partial tx with real payment...');
             const txHex = typeof request.partialExecTx === 'string'
                 ? request.partialExecTx
                 : request.partialExecTx.txHex;
@@ -286,21 +374,30 @@ let AccessRequestService = class AccessRequestService {
             await studentComputer.broadcast(partialTx);
             await new Promise(resolve => setTimeout(resolve, 200));
             await this.mineBlocks(studentComputer, 1);
-            console.log('✅ Quiz token purchased!');
-            const studentRevs = await studentComputer.query({ publicKey: request.student.publicKey });
+            console.log('✅ Quiz token transferred to student!');
+            const storedTx = request.partialExecTx;
+            const mintedTokenId = storedTx?.mintedTokenId;
             let studentQuizToken = null;
-            for (const rev of studentRevs) {
-                const obj = await studentComputer.sync(rev);
-                if (obj && obj.amount === BigInt(1) && obj.symbol) {
-                    studentQuizToken = obj;
-                    break;
+            if (mintedTokenId) {
+                const [mintedTokenRev] = await studentComputer.query({ ids: [mintedTokenId] });
+                if (mintedTokenRev) {
+                    studentQuizToken = await studentComputer.sync(mintedTokenRev);
                 }
             }
             if (!studentQuizToken) {
-                const [firstRev] = studentRevs;
-                studentQuizToken = await studentComputer.sync(firstRev);
+                const studentRevs = await studentComputer.query({ publicKey: request.student.publicKey });
+                for (const rev of studentRevs) {
+                    const obj = await studentComputer.sync(rev);
+                    if (obj && obj.amount === BigInt(1) && obj.symbol) {
+                        studentQuizToken = obj;
+                        break;
+                    }
+                }
             }
-            console.log(`  🎟️  Quiz token found: ${studentQuizToken._id}, amount=${studentQuizToken.amount}, symbol=${studentQuizToken.symbol}`);
+            if (!studentQuizToken) {
+                throw new Error('Quiz token not found after payment — contact support');
+            }
+            console.log(`  🎟️  Quiz token: ${studentQuizToken._id}, symbol=${studentQuizToken.symbol}`);
             await this.prisma.quizAccessRequest.update({
                 where: { id: requestId },
                 data: {

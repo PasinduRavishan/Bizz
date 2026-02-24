@@ -30,6 +30,8 @@ interface QuizAttempt {
     passThreshold: number
     status: string
     prizePool: string
+    prizePerWinner: string | null    // per-winner share (set at reveal time)
+    winnerCount?: number             // number of winners
     entryFee: string
     deadline?: string
   }
@@ -67,6 +69,9 @@ export default function StudentDashboard() {
 
   useEffect(() => {
     fetchAll()
+    // Auto-refresh every 15s so students see results appear as soon as auto-reveal completes
+    const interval = setInterval(fetchAll, 15000)
+    return () => clearInterval(interval)
   }, [])
 
   const fetchAll = async () => {
@@ -119,7 +124,19 @@ export default function StudentDashboard() {
 
     // Quiz still active — answers not graded yet
     if (attempt.quiz.status === 'ACTIVE') {
-      if (attempt.status === 'COMMITTED') return <Badge variant="info">Submitted — Awaiting Results</Badge>
+      const deadlinePassed = attempt.quiz.deadline && new Date(attempt.quiz.deadline) < new Date()
+      if (attempt.status === 'COMMITTED') {
+        if (deadlinePassed) return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-600">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+            </span>
+            Auto-Revealing...
+          </span>
+        )
+        return <Badge variant="info">Submitted — Awaiting Results</Badge>
+      }
       if (attempt.status === 'OWNED') return <Badge variant="default">In Progress</Badge>
       return <Badge variant="default">{attempt.status}</Badge>
     }
@@ -147,26 +164,29 @@ export default function StudentDashboard() {
     attempt.status === 'VERIFIED' && attempt.passed === true && attempt.quiz.status === 'REVEALED'
 
   // Status display for access requests
+  // NOTE: PENDING status no longer shows in the actionable list since auto-approval
+  // is instant. If a PENDING request is ever shown, it means approval is still in
+  // progress (e.g. network delay). Show a helpful "setting up" message.
   const requestStatusInfo = (status: string) => {
     const map: Record<string, { emoji: string; label: string; description: string; color: string }> = {
       PENDING:  {
-        emoji: '⏳', label: 'Awaiting Approval',
-        description: 'Teacher is reviewing your access request',
-        color: 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300',
+        emoji: '⚙️', label: 'Setting Up',
+        description: 'Access is being set up automatically — this should be instant!',
+        color: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300',
       },
       APPROVED: {
-        emoji: '💳', label: 'Ready to Pay',
-        description: 'Approved! Pay the entry fee to start the quiz',
+        emoji: '💳', label: 'Pay Entry Fee',
+        description: 'Access ready! Pay the entry fee to receive your quiz token',
         color: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300',
       },
       PAID: {
         emoji: '✅', label: 'Ready to Start',
-        description: 'Payment confirmed. You can now start the quiz!',
+        description: 'Entry fee confirmed. Start the quiz to begin!',
         color: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300',
       },
       FEE_CLAIMED: {
         emoji: '🚀', label: 'Ready to Start',
-        description: 'Payment received. You can now start the quiz!',
+        description: 'All set! Start the quiz whenever you\'re ready.',
         color: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300',
       },
     }
@@ -176,13 +196,23 @@ export default function StudentDashboard() {
     }
   }
 
-  // Pending/actionable requests section (FEE_CLAIMED = teacher collected fee, student can still start)
+  // Actionable requests: APPROVED → pay fee, PAID/FEE_CLAIMED → start quiz
+  // PENDING is transient (auto-approve is near-instant) but keep it for edge cases
   const actionableRequests = requests.filter(r => ['PENDING', 'APPROVED', 'PAID', 'FEE_CLAIMED'].includes(r.status))
-  const approvedOrPaid = actionableRequests.filter(r => ['APPROVED', 'PAID', 'FEE_CLAIMED'].includes(r.status))
+  const readyToAct = actionableRequests.filter(r => ['APPROVED', 'PAID', 'FEE_CLAIMED'].includes(r.status))
 
   // Attempts summary
   const passed = attempts.filter(a => a.passed === true).length
   const pending = attempts.filter(a => a.passed === null).length
+
+  // Attempts where the quiz deadline has passed but quiz is still ACTIVE (auto-reveal in progress)
+  const awaitingAutoReveal = attempts.filter(
+    a =>
+      a.status === 'COMMITTED' &&
+      a.quiz.status === 'ACTIVE' &&
+      a.quiz.deadline &&
+      new Date(a.quiz.deadline) < new Date()
+  )
 
   return (
     <main className="container mx-auto px-4 py-8 max-w-6xl">
@@ -242,9 +272,9 @@ export default function StudentDashboard() {
             <section className="mb-8">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                 📬 Active Quiz Requests
-                {approvedOrPaid.length > 0 && (
+                {readyToAct.length > 0 && (
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">
-                    {approvedOrPaid.length} action needed
+                    {readyToAct.length} action needed
                   </span>
                 )}
               </h2>
@@ -283,14 +313,22 @@ export default function StudentDashboard() {
                               📋 Summary
                             </button>
                             {req.status === 'PENDING' && (
-                              <span className="text-sm text-yellow-600 dark:text-yellow-400 italic">
-                                Waiting for teacher...
+                              <span className="text-sm text-blue-600 dark:text-blue-400 italic flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                                Setting up...
                               </span>
                             )}
-                            {(req.status === 'APPROVED' || req.status === 'PAID' || req.status === 'FEE_CLAIMED') && (
+                            {req.status === 'APPROVED' && (
                               <Link href={`/student/take/${req.quizId}`}>
                                 <Button variant="primary" size="sm">
-                                  {req.status === 'APPROVED' ? '💳 Pay & Start' : '🚀 Start Quiz'}
+                                  💳 Pay Entry Fee
+                                </Button>
+                              </Link>
+                            )}
+                            {(req.status === 'PAID' || req.status === 'FEE_CLAIMED') && (
+                              <Link href={`/student/take/${req.quizId}`}>
+                                <Button variant="primary" size="sm">
+                                  🚀 Start Quiz
                                 </Button>
                               </Link>
                             )}
@@ -302,6 +340,26 @@ export default function StudentDashboard() {
                 })}
               </div>
             </section>
+          )}
+
+          {/* Auto-reveal in-progress banner */}
+          {awaitingAutoReveal.length > 0 && (
+            <div className="mb-6 bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-600 rounded-xl p-4 flex items-start gap-3">
+              <span className="relative flex h-3 w-3 mt-0.5 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500" />
+              </span>
+              <div className="flex-1">
+                <p className="font-bold text-amber-800 dark:text-amber-200">
+                  {awaitingAutoReveal.length === 1
+                    ? `"${awaitingAutoReveal[0].quiz.title || awaitingAutoReveal[0].quiz.symbol}" is being auto-revealed`
+                    : `${awaitingAutoReveal.length} quiz results are being auto-revealed`}
+                </p>
+                <p className="text-sm text-amber-700 dark:text-amber-300 mt-0.5">
+                  Answers are being revealed automatically. Your results will appear here in a moment — this page refreshes every 15 seconds.
+                </p>
+              </div>
+            </div>
           )}
 
           {/* ===== SECTION 2: Quiz Attempts ===== */}
@@ -354,8 +412,11 @@ export default function StudentDashboard() {
                             <div>
                               <span className="text-gray-600 dark:text-gray-400">Prize: </span>
                               <span className="font-medium text-green-600">
-                                {formatSats(attempt.quiz.prizePool)} sats
+                                {formatSats(attempt.quiz.prizePerWinner ?? attempt.quiz.prizePool)} sats
                               </span>
+                              {(attempt.quiz.winnerCount ?? 0) > 1 && (
+                                <span className="ml-1 text-xs text-gray-400">/{attempt.quiz.winnerCount} winners</span>
+                              )}
                             </div>
                           </div>
 
@@ -379,8 +440,20 @@ export default function StudentDashboard() {
                               // Already done
                               <Button variant="outline" disabled>✅ Prize Claimed</Button>
                             ) : attempt.quiz.status === 'ACTIVE' ? (
-                              // Quiz still running — answers not revealed yet
-                              <Button variant="outline" disabled>⏳ Awaiting Results</Button>
+                              // Quiz still running — check if deadline passed (auto-reveal in progress)
+                              attempt.quiz.deadline && new Date(attempt.quiz.deadline) < new Date() ? (
+                                <Button variant="outline" disabled className="border-amber-400 text-amber-700 dark:text-amber-300">
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span className="relative flex h-2 w-2">
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+                                    </span>
+                                    Auto-Revealing...
+                                  </span>
+                                </Button>
+                              ) : (
+                                <Button variant="outline" disabled>⏳ Awaiting Results</Button>
+                              )
                             ) : attempt.quiz.status === 'REVEALED' && attempt.status === 'COMMITTED' ? (
                               // Quiz revealed + student has committed answers → must do blockchain verify first
                               <Link href={`/student/prize/${attempt.id}`}>

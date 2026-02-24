@@ -17,10 +17,13 @@ export declare class QuizAttemptService {
         passed: boolean;
         status: string;
     }>;
+    private autoCreatePrizePaymentAndSwap;
     getStudentAttempts(studentId: string): Promise<{
         attempts: {
+            prizeAmount: string | null;
             quiz: {
                 prizePool: string;
+                prizePerWinner: string | null;
                 entryFee: string;
                 symbol: string;
                 id: string;
@@ -29,6 +32,7 @@ export declare class QuizAttemptService {
                 deadline: Date;
                 contractId: string;
                 questionCount: number;
+                winnerCount: number;
                 status: import(".prisma/client").$Enums.QuizStatus;
             };
             id: string;
@@ -54,8 +58,10 @@ export declare class QuizAttemptService {
     }>;
     getAttempt(attemptId: string, userId: string): Promise<{
         attempt: {
+            prizeAmount: string | null;
             quiz: {
                 prizePool: string;
+                prizePerWinner: string | null;
                 entryFee: string;
                 symbol: string;
                 id: string;
@@ -64,6 +70,7 @@ export declare class QuizAttemptService {
                 deadline: Date;
                 contractId: string;
                 questionCount: number;
+                winnerCount: number;
                 status: import(".prisma/client").$Enums.QuizStatus;
                 revealedAnswers: import("@prisma/client/runtime/library").JsonValue;
                 teacherId: string;

@@ -2,14 +2,6 @@
 // Auto-generated from TypeScript source - DO NOT EDIT MANUALLY
 // Edit the TypeScript file in src/Quiz.ts instead
 
-/**
- * Token - Base class for TBC20 fungible tokens
- *
- * Implements the standard TBC20 pattern from Bitcoin Computer monorepo.
- * Pattern: class Token extends Contract with amount, symbol, _owners
- *
- * All fungible tokens should extend this base class.
- */
 export class Token extends Contract {
     constructor(to, amount, symbol, additionalProps) {
         if (!to)
@@ -59,22 +51,6 @@ export class Token extends Contract {
 
 
 export class Quiz extends Token {
-    /**
-     * Constructor - Creates Quiz as fungible token
-     *
-     * @param to - Token owner (teacher for new quiz, student for transferred tokens)
-     * @param initialSupply - Initial supply of quiz tokens (0 for on-demand minting)
-     * @param symbol - Token symbol (e.g., "MATH101")
-     * @param teacher - Teacher's public key (metadata, not ownership)
-     * @param questionHashIPFS - IPFS hash of encrypted questions
-     * @param answerHashes - Array of hashed answers
-     * @param prizePool - Total prize pool in satoshis
-     * @param entryFee - Entry fee per student in satoshis
-     * @param passThreshold - Pass percentage (0-100)
-     * @param deadline - Quiz deadline timestamp
-     * @param teacherRevealDeadline - Deadline for teacher to reveal answers
-     * @param originalQuizId - Original quiz ID (for transferred tokens, empty string for new quiz)
-     */
     constructor(to, initialSupply, symbol, teacher, questionHashIPFS, answerHashes, prizePool, entryFee, passThreshold, deadline, teacherRevealDeadline = null, originalQuizId = '') {
         const TEACHER_REVEAL_WINDOW = 48 * 3600 * 1000;
         const finalTeacherRevealDeadline = teacherRevealDeadline || (deadline + TEACHER_REVEAL_WINDOW);
@@ -114,6 +90,9 @@ export class Quiz extends Token {
         this.questionHashIPFS, this.answerHashes, this.prizePool, this.entryFee, this.passThreshold, this.deadline, this.teacherRevealDeadline, quizId // Preserve original quiz ID
         );
     }
+    transferTo(to) {
+        this._owners = [to];
+    }
     burn() {
         this.amount = 0n;
     }
@@ -142,6 +121,7 @@ export class Quiz extends Token {
         if (!Array.isArray(winners) || winners.length === 0) {
             this.status = 'completed';
             this.distributedAt = Date.now();
+            return;
         }
         this.winners = winners;
         this.status = 'completed';
@@ -173,9 +153,11 @@ export class Quiz extends Token {
         const now = Date.now();
         if (this.status === 'active' && now > this.teacherRevealDeadline) {
             this.status = 'abandoned';
+            return;
         }
         if (this.status === 'revealed' && now > this.distributionDeadline) {
             this.status = 'abandoned';
+            return;
         }
         throw new Error('Cannot mark as abandoned yet');
     }

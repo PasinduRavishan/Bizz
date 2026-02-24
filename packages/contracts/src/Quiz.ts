@@ -142,6 +142,16 @@ export class Quiz extends Token {
     )
   }
 
+  /**
+   * Transfer ownership of this token to another address (in-place).
+   * Used by QuizAccess.exec to assign a pre-minted teacher-owned token
+   * to the student without creating a new UTXO.
+   * Pattern: same as NFT.transfer(to) in the Bitcoin Computer docs.
+   */
+  transferTo(to: string): void {
+    this._owners = [to]
+  }
+
 
   burn(): void {
     this.amount = 0n

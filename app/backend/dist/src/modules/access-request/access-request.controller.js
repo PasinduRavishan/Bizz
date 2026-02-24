@@ -32,9 +32,6 @@ let AccessRequestController = class AccessRequestController {
     async getTeacherRequests(req) {
         return this.accessRequestService.getTeacherRequests(req.user.id);
     }
-    async approveRequest(id, req) {
-        return this.accessRequestService.approveRequest(id, req.user.id);
-    }
     async completePayment(id, req) {
         return this.accessRequestService.completePayment(id, req.user.id);
     }
@@ -70,15 +67,6 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AccessRequestController.prototype, "getTeacherRequests", null);
-__decorate([
-    (0, common_1.Put)(':id/approve'),
-    (0, common_1.UseGuards)(teacher_guard_1.TeacherGuard),
-    __param(0, (0, common_1.Param)('id')),
-    __param(1, (0, common_1.Request)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Object]),
-    __metadata("design:returntype", Promise)
-], AccessRequestController.prototype, "approveRequest", null);
 __decorate([
     (0, common_1.Post)(':id/pay'),
     __param(0, (0, common_1.Param)('id')),

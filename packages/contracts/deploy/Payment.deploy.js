@@ -2,12 +2,6 @@
 // Auto-generated from TypeScript source - DO NOT EDIT MANUALLY
 // Edit the TypeScript file in src/Payment.ts instead
 
-/**
- * Payment Smart Contract
- *
- * Represents a payment that can be claimed by a recipient.
- * Created during prize distribution or entry fee collection.
- */
 export class Payment extends Contract {
     constructor(recipient, amount, purpose, reference) {
         super({

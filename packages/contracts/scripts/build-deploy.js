@@ -55,9 +55,16 @@ function processContract(contractName) {
   content = content.replace(/^\s*\/\/\s*For deployment.*$/gm, '');
 
   // CRITICAL: Remove property declarations inside classes
-  content = content.replace(/^(\s+)([a-zA-Z_$][a-zA-Z0-9_$]*);$/gm, '');
+  // Exclude JS keywords that also match the pattern (return; break; continue; etc.)
+  const jsKeywords = new Set(['return', 'break', 'continue', 'throw', 'delete', 'typeof', 'void', 'await', 'yield', 'super', 'this', 'new', 'debugger'])
+  content = content.replace(/^(\s+)([a-zA-Z_$][a-zA-Z0-9_$]*);$/gm, (match, indent, name) => {
+    return jsKeywords.has(name) ? match : ''
+  });
 
-  // Remove comment lines (but keep comments inside code)
+  // Remove block comments (/** */ and /* */) — keep on-chain code small to avoid push size limit
+  content = content.replace(/\/\*[\s\S]*?\*\//gm, '');
+
+  // Remove single-line comment lines
   content = content.replace(/^\s*\/\/.*$/gm, '');
 
   // Remove multiple consecutive empty lines

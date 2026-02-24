@@ -57,6 +57,8 @@ interface Quiz {
   title: string | null
   questionCount: number
   prizePool: string
+  prizePerWinner?: string | null   // per-winner share (set at reveal time)
+  winnerCount?: number             // number of passing students (set at reveal time)
   entryFee: string
   passThreshold: number
   status: string
@@ -384,7 +386,12 @@ export function QuizSummaryTeacher({
           {/* ── SECTION: Prize Distribution ─────────────────────── */}
           {(quiz.status === 'REVEALED' || quiz.status === 'COMPLETED' || passedAttempts.length > 0) && (
             <>
-              <SectionHeading>Prize Distribution — {formatSats(quiz.prizePool)} sats per winner</SectionHeading>
+              <SectionHeading>
+                Prize Distribution —{' '}
+                {quiz.prizePerWinner && (quiz.winnerCount ?? 0) > 1
+                  ? `${formatSats(quiz.prizePerWinner)} sats/winner × ${quiz.winnerCount} (pool: ${formatSats(quiz.prizePool)})`
+                  : `${formatSats(quiz.prizePool)} sats per winner`}
+              </SectionHeading>
 
               {winners.length === 0 ? (
                 <p className="text-sm text-gray-400 italic py-2">No winners yet (quiz not graded or no passes).</p>

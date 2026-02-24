@@ -3,12 +3,12 @@
 // Edit the TypeScript file in src/QuizAccess.ts instead
 
 export class QuizAccess extends Contract {
-    static exec(quizToken, entryFeePayment) {
-        const [teacher] = quizToken._owners;
+    static exec(mintedToken, entryFeePayment) {
+        const [teacher] = mintedToken._owners;
         const [student] = entryFeePayment._owners;
         entryFeePayment.transfer(teacher);
-        const studentQuiz = quizToken.mint(student, 1n);
-        return [entryFeePayment, studentQuiz];
+        mintedToken.transferTo(student);
+        return [entryFeePayment, mintedToken];
     }
 }
 export class QuizAccessHelper {
@@ -20,24 +20,15 @@ export class QuizAccessHelper {
         this.mod = await this.computer.deploy(`export ${QuizAccess}`);
         return this.mod;
     }
-    validateQuizAccess(quiz, payment) {
-        const [teacher] = quiz._owners;
-        if (payment.recipient !== teacher) {
+    createQuizAccessTx(mintedToken, paymentMock, sighashType) {
+        const [teacher] = mintedToken._owners;
+        if (paymentMock.recipient !== teacher) {
             throw new Error('Entry fee must be paid to teacher');
         }
-        if (payment.purpose !== 'Entry Fee') {
-            throw new Error('Payment must be for entry fee');
-        }
-        if (payment.amount !== quiz.entryFee) {
-            throw new Error('Payment amount must match quiz entry fee');
-        }
-    }
-    createQuizAccessTx(quiz, paymentMock, sighashType) {
-        this.validateQuizAccess(quiz, paymentMock);
         return this.computer.encode({
-            exp: `${QuizAccess} QuizAccess.exec(quizToken, entryFeePayment)`,
+            exp: `${QuizAccess} QuizAccess.exec(mintedToken, entryFeePayment)`,
             env: {
-                quizToken: quiz._rev,
+                mintedToken: mintedToken._rev,
                 entryFeePayment: paymentMock._rev
             },
             mocks: { entryFeePayment: paymentMock },

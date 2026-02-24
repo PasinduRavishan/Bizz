@@ -18,8 +18,10 @@ export declare class QuizAttemptController {
     }>;
     getStudentAttempts(req: any): Promise<{
         attempts: {
+            prizeAmount: string | null;
             quiz: {
                 prizePool: string;
+                prizePerWinner: string | null;
                 entryFee: string;
                 symbol: string;
                 id: string;
@@ -28,6 +30,7 @@ export declare class QuizAttemptController {
                 deadline: Date;
                 contractId: string;
                 questionCount: number;
+                winnerCount: number;
                 status: import(".prisma/client").$Enums.QuizStatus;
             };
             id: string;
@@ -53,8 +56,10 @@ export declare class QuizAttemptController {
     }>;
     getAttempt(attemptId: string, req: any): Promise<{
         attempt: {
+            prizeAmount: string | null;
             quiz: {
                 prizePool: string;
+                prizePerWinner: string | null;
                 entryFee: string;
                 symbol: string;
                 id: string;
@@ -63,6 +68,7 @@ export declare class QuizAttemptController {
                 deadline: Date;
                 contractId: string;
                 questionCount: number;
+                winnerCount: number;
                 status: import(".prisma/client").$Enums.QuizStatus;
                 revealedAnswers: import("@prisma/client/runtime/library").JsonValue;
                 teacherId: string;

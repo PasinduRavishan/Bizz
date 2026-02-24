@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaClient } from '@prisma/client';
 import { Computer } from '@bitcoin-computer/lib';
 import { CreateQuizDto, CreateQuizUIDto, RevealAnswersDto } from './dto';
@@ -69,6 +70,9 @@ function computeScore(
 export class QuizService {
   private prisma: PrismaClient;
   private quizModuleId: string | undefined;
+  /** In-memory failure counter per quiz id — reset on successful reveal or server restart */
+  private readonly revealFailures = new Map<string, number>();
+  private readonly MAX_REVEAL_FAILURES = 3;
 
   constructor() {
     this.prisma = new PrismaClient();
@@ -116,7 +120,7 @@ export class QuizService {
       const teacherComputer = computerManager.getComputer(teacher.encryptedMnemonic);
 
       const quizHelper = new QuizHelper(teacherComputer, this.quizModuleId);
-      const initialSupply = createQuizDto.initialSupply || 1;
+      const initialSupply = createQuizDto.initialSupply || 1000;
       const quizParams = {
         teacherPubKey: teacher.publicKey,
         initialSupply: BigInt(initialSupply),
@@ -231,7 +235,7 @@ export class QuizService {
         prizePool: createQuizUIDto.prizePool,
         passThreshold: createQuizUIDto.passThreshold,
         deadline: new Date(createQuizUIDto.deadline).getTime(),
-        initialSupply: createQuizUIDto.initialSupply || 1,
+        initialSupply: createQuizUIDto.initialSupply || 1000,
       };
 
       // 6. Call the existing create method
@@ -298,6 +302,7 @@ export class QuizService {
         ...quiz,
         entryFee: quiz.entryFee.toString(),
         prizePool: quiz.prizePool.toString(),
+        prizePerWinner: quiz.prizePerWinner != null ? quiz.prizePerWinner.toString() : null,
       })),
     };
   }
@@ -351,6 +356,7 @@ export class QuizService {
           teacher: safeTeacher,
           entryFee: dbQuiz.entryFee.toString(),
           prizePool: dbQuiz.prizePool.toString(),
+          prizePerWinner: dbQuiz.prizePerWinner != null ? dbQuiz.prizePerWinner.toString() : null,
           blockchainStatus: quizContract.status,
           answerHashes: quizContract.status === 'revealed' ? quizContract.answerHashes : undefined,
           revealedAnswers: quizContract.status === 'revealed' ? quizContract.revealedAnswers : undefined,
@@ -366,6 +372,7 @@ export class QuizService {
           teacher: safeTeacher,
           entryFee: dbQuiz.entryFee.toString(),
           prizePool: dbQuiz.prizePool.toString(),
+          prizePerWinner: dbQuiz.prizePerWinner != null ? dbQuiz.prizePerWinner.toString() : null,
           warning: 'Cached data',
         },
       };
@@ -431,28 +438,38 @@ export class QuizService {
       const [latestQuizRev] = await computer.query({ ids: [dbQuiz.contractId] })
       const syncedQuiz = await computer.sync(latestQuizRev)
 
-      if (syncedQuiz.status !== 'active') throw new BadRequestException(`Status is ${syncedQuiz.status}`)
+      // Track final contractRev — updated after broadcast if we actually reveal
+      let contractRev = syncedQuiz._rev;
 
-      // 2. Use encodeCall (NOT encode with obj)
-      const { tx: revealTx } = await computer.encodeCall({
-        target: syncedQuiz,
-        property: 'revealAnswers',
-        args: [answers, salt],
-        mod: process.env.QUIZ_MODULE_ID
-      })
+      if (syncedQuiz.status === 'revealed') {
+        // Already revealed on-chain (e.g. a previous cron run broadcast but crashed before
+        // updating the DB).  Skip the broadcast — just sync DB state + pre-grade below.
+        console.log('ℹ️  Quiz already revealed on blockchain — syncing DB and pre-grading...');
+      } else if (syncedQuiz.status !== 'active') {
+        throw new BadRequestException(`Status is ${syncedQuiz.status}`);
+      } else {
+        // 2. Use encodeCall (NOT encode with obj)
+        const { tx: revealTx } = await computer.encodeCall({
+          target: syncedQuiz,
+          property: 'revealAnswers',
+          args: [answers, salt],
+          mod: process.env.QUIZ_MODULE_ID
+        })
 
-      // 3. Broadcast
-      await computer.broadcast(revealTx)
+        // 3. Broadcast
+        await computer.broadcast(revealTx)
 
-      // 4. Wait for mempool (200ms like TestHelper.waitForMempool)
-      await new Promise(resolve => setTimeout(resolve, 200))
+        // 4. Wait for mempool (200ms like TestHelper.waitForMempool)
+        await new Promise(resolve => setTimeout(resolve, 200))
 
-      // 5. Mine to confirm
-      await this.mineBlocks(computer, 1)
+        // 5. Mine to confirm
+        await this.mineBlocks(computer, 1)
 
-      // 6. Sync to get updated quiz
-      const [updatedQuizRev] = await computer.query({ ids: [dbQuiz.contractId] })
-      const updatedQuiz = await computer.sync(updatedQuizRev)
+        // 6. Sync to get updated quiz
+        const [updatedQuizRev] = await computer.query({ ids: [dbQuiz.contractId] })
+        const updatedQuiz = await computer.sync(updatedQuizRev)
+        contractRev = updatedQuiz._rev;
+      }
 
       console.log('✅ Answers revealed on blockchain');
 
@@ -463,7 +480,7 @@ export class QuizService {
           status: 'REVEALED',
           revealedAnswers: answers,
           salt,
-          contractRev: updatedQuiz._rev,
+          contractRev,
         },
       });
 
@@ -471,7 +488,7 @@ export class QuizService {
       // Load questions from DB (stored at quiz creation by createFromUI)
       const quizWithQuestions = await this.prisma.quiz.findUnique({
         where: { id: quizId },
-        select: { questions: true, passThreshold: true },
+        select: { questions: true, passThreshold: true, prizePool: true },
       });
       const questions = quizWithQuestions?.questions as Array<{ question: string; options: string[] }> | null;
       const passThreshold = quizWithQuestions?.passThreshold ?? 70;
@@ -498,6 +515,26 @@ export class QuizService {
         }
       }
 
+      // ── Calculate and store per-winner prize share ─────────────────────────
+      // prize is divided equally among all passing students (floor division).
+      // The winner count is final here because ALL committed attempts are graded
+      // before any student calls verifyAttempt() (which requires REVEALED status).
+      if (passedCount > 0 && quizWithQuestions?.prizePool) {
+        const prizePerWinner = quizWithQuestions.prizePool / BigInt(passedCount);
+        await this.prisma.quiz.update({
+          where: { id: quizId },
+          data: { winnerCount: passedCount, prizePerWinner },
+        });
+        console.log(`💰 Multi-winner distribution: ${passedCount} winner(s) × ${prizePerWinner.toString()} sats each (pool: ${quizWithQuestions.prizePool.toString()} sats)`);
+      } else {
+        // No winners — store 0 winners, prizePerWinner stays null
+        await this.prisma.quiz.update({
+          where: { id: quizId },
+          data: { winnerCount: 0 },
+        });
+        console.log('ℹ️  No passing students — prize pool not distributed');
+      }
+
       console.log(`✅ Pre-graded ${gradedCount} attempt(s): ${passedCount} passed, ${gradedCount - passedCount} failed`);
 
       return {
@@ -505,10 +542,88 @@ export class QuizService {
         message: 'Answers revealed',
         gradedAttempts: gradedCount,
         passedAttempts: passedCount,
+        winnerCount: passedCount,
+        prizePerWinner: passedCount > 0 && quizWithQuestions?.prizePool
+          ? (quizWithQuestions.prizePool / BigInt(passedCount)).toString()
+          : null,
       };
     } catch (error) {
       console.error('Reveal error:', error);
       throw new InternalServerErrorException(`Reveal failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Auto-reveal cron job — runs every minute.
+   *
+   * Only processes quizzes whose teacher has a valid encryptedMnemonic (i.e. properly
+   * set-up accounts).  Old test/legacy quizzes whose teachers have no wallet are
+   * skipped at the DB level so they never enter the loop.
+   *
+   * Additional safeguard: an in-memory failure counter caps retries at
+   * MAX_REVEAL_FAILURES per quiz.  After that the quiz is marked COMPLETED so it
+   * is never picked up again, preventing the infinite-loop seen with old quizzes.
+   */
+  @Cron(CronExpression.EVERY_MINUTE)
+  async autoRevealExpiredQuizzes(): Promise<void> {
+    try {
+      // Only find quizzes whose teacher has a mnemonic — old/legacy quizzes without
+      // one are permanently excluded from auto-reveal at the query level.
+      const expiredQuizzes = await this.prisma.quiz.findMany({
+        where: {
+          status: 'ACTIVE',
+          deadline: { lt: new Date() },
+          teacher: {
+            encryptedMnemonic: { not: null },
+          },
+        },
+        include: {
+          teacher: {
+            select: { id: true, encryptedMnemonic: true, address: true },
+          },
+        },
+      });
+
+      if (expiredQuizzes.length === 0) return;
+
+      console.log(`⏰ Auto-reveal: found ${expiredQuizzes.length} eligible expired quiz(zes)`);
+
+      for (const quiz of expiredQuizzes) {
+        const failures = this.revealFailures.get(quiz.id) ?? 0;
+
+        // After MAX_REVEAL_FAILURES consecutive failures mark COMPLETED so the cron
+        // never picks this quiz up again.
+        if (failures >= this.MAX_REVEAL_FAILURES) {
+          console.warn(
+            `⚠️  Quiz ${quiz.id} ("${quiz.title}") failed auto-reveal ${failures} time(s) — ` +
+            `marking COMPLETED to stop retrying.`
+          );
+          await this.prisma.quiz.update({ where: { id: quiz.id }, data: { status: 'COMPLETED' } });
+          this.revealFailures.delete(quiz.id);
+          continue;
+        }
+
+        try {
+          console.log(`🔓 Auto-revealing quiz: ${quiz.id} ("${quiz.title}") — attempt ${failures + 1}/${this.MAX_REVEAL_FAILURES}`);
+
+          // revealAnswers() falls back to DB-stored answers + salt automatically
+          await this.revealAnswers(quiz.id, quiz.teacher.id, { answers: [], salt: '' });
+
+          // Success — clear any previous failure count
+          this.revealFailures.delete(quiz.id);
+          console.log(`✅ Auto-reveal complete for quiz: ${quiz.id}`);
+        } catch (err) {
+          const newCount = failures + 1;
+          this.revealFailures.set(quiz.id, newCount);
+          console.error(
+            `❌ Auto-reveal failed for quiz ${quiz.id} (${newCount}/${this.MAX_REVEAL_FAILURES}):`,
+            (err as Error).message,
+          );
+          // Continue with remaining quizzes
+        }
+      }
+    } catch (err) {
+      console.error('❌ Auto-reveal cron job error:', (err as Error).message);
     }
   }
 

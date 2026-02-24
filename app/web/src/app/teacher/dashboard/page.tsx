@@ -28,6 +28,8 @@ interface Quiz {
   title: string | null
   questionCount: number
   prizePool: string
+  prizePerWinner: string | null   // per-winner share (set at reveal time)
+  winnerCount: number             // number of passing students (set at reveal time)
   entryFee: string
   passThreshold: number
   status: string
@@ -37,18 +39,6 @@ interface Quiz {
   _count?: {
     attempts: number
   }
-}
-
-// Returns the number of winners who are waiting for a teacher prize action
-function getPrizeActionCount(attempts: QuizAttemptSummary[] = []): number {
-  return attempts.filter(a => {
-    if (a.passed !== true) return false
-    // Has AnswerProof but no Prize Payment yet → teacher must create payment
-    if (a.answerProofId && !a.prizePaymentId) return true
-    // Has Prize Payment but no Swap TX yet → teacher must create swap TX
-    if (a.prizePaymentId && !a.swapTxHex) return true
-    return false
-  }).length
 }
 
 interface AttemptSummary {
@@ -88,12 +78,12 @@ interface QuizWithRequests extends Quiz {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Quiz Detail Modal
+// Quiz Detail Modal — shows request statuses + collect fee buttons only
+// No approve buttons (auto-approved). No reveal button (auto-revealed).
 // ──────────────────────────────────────────────────────────────────────────
 function QuizDetailModal({
   quiz,
   onClose,
-  onApprove,
   onClaim,
   processingRequest,
   formatSats,
@@ -101,7 +91,6 @@ function QuizDetailModal({
 }: {
   quiz: QuizWithRequests
   onClose: () => void
-  onApprove: (id: string) => void
   onClaim: (id: string) => void
   processingRequest: string | null
   formatSats: (s: string | number) => string
@@ -109,12 +98,11 @@ function QuizDetailModal({
 }) {
   const router = useRouter()
   const isDeadlinePassed = new Date() >= new Date(quiz.deadline)
-  const canReveal = quiz.status === 'ACTIVE' && isDeadlinePassed
 
-  const pending = quiz.requests.filter(r => r.status === 'PENDING').length
   const approved = quiz.requests.filter(r => r.status === 'APPROVED').length
   const paid = quiz.requests.filter(r => r.status === 'PAID').length
   const started = quiz.requests.filter(r => r.status === 'STARTED').length
+  const feeClaimed = quiz.requests.filter(r => r.feeClaimedAt).length
   const submitted = quiz.requests.filter(
     r => r.status === 'STARTED' && r.attempt?.status === 'COMMITTED'
   ).length
@@ -139,6 +127,9 @@ function QuizDetailModal({
               Deadline: <span className={isDeadlinePassed ? 'text-red-500 font-medium' : ''}>
                 {formatDate(quiz.deadline)}
               </span>
+              {isDeadlinePassed && (
+                <span className="ml-2 text-xs text-gray-400">(Auto-reveal in progress)</span>
+              )}
             </p>
           </div>
           <button
@@ -158,7 +149,12 @@ function QuizDetailModal({
           </div>
           <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 text-center">
             <div className="text-2xl font-bold text-green-600">{formatSats(quiz.prizePool)}</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Prize (sats)</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Prize Pool (sats)</div>
+            {quiz.prizePerWinner && quiz.winnerCount > 1 && (
+              <div className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">
+                {formatSats(quiz.prizePerWinner)}/winner × {quiz.winnerCount}
+              </div>
+            )}
           </div>
           <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-center">
             <div className="text-2xl font-bold text-blue-600">{formatSats(quiz.entryFee)}</div>
@@ -181,15 +177,15 @@ function QuizDetailModal({
         {/* Request pipeline summary */}
         <div className="px-6 pt-4 pb-2">
           <h3 className="font-semibold text-gray-900 dark:text-white mb-2 text-sm uppercase tracking-wider">
-            Request Pipeline
+            Student Pipeline
           </h3>
           <div className="flex gap-3 text-xs flex-wrap">
-            {pending > 0 && <span className="text-yellow-600 font-medium">⏳ {pending} pending approval</span>}
             {approved > 0 && <span className="text-blue-600 font-medium">💳 {approved} awaiting payment</span>}
             {paid > 0 && <span className="text-green-600 font-medium">✅ {paid} ready to collect</span>}
             {started > 0 && <span className="text-purple-600 font-medium">🎓 {started} in progress</span>}
             {submitted > 0 && <span className="text-indigo-600 font-medium">📝 {submitted} answers submitted</span>}
-            {quiz.requests.length === 0 && <span className="text-gray-400">No requests yet</span>}
+            {feeClaimed > 0 && <span className="text-teal-600 font-medium">💰 {feeClaimed} fees collected</span>}
+            {quiz.requests.length === 0 && <span className="text-gray-400">No students yet</span>}
           </div>
         </div>
 
@@ -224,20 +220,10 @@ function QuizDetailModal({
                       <div className="text-xs text-purple-600 mt-0.5">Started {formatDate(req.startedAt)}</div>
                     )}
                     {attemptStatus === 'COMMITTED' && (
-                      <div className="text-xs text-indigo-600 mt-0.5 font-medium">📝 Answers submitted — awaiting reveal</div>
+                      <div className="text-xs text-indigo-600 mt-0.5 font-medium">📝 Answers submitted</div>
                     )}
                   </div>
                   <div className="shrink-0">
-                    {req.status === 'PENDING' && (
-                      <button
-                        type="button"
-                        onClick={() => onApprove(req.id)}
-                        disabled={processingRequest === req.id}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium"
-                      >
-                        {processingRequest === req.id ? '⏳' : 'Approve'}
-                      </button>
-                    )}
                     {req.status === 'APPROVED' && (
                       <span className="text-xs text-blue-500 italic">Waiting payment...</span>
                     )}
@@ -254,12 +240,6 @@ function QuizDetailModal({
                     {(req.status === 'FEE_CLAIMED' || (req.status === 'STARTED' && req.feeClaimedAt)) && (
                       <span className="text-xs text-teal-600 dark:text-teal-400 font-medium">✅ Fee Collected</span>
                     )}
-                    {req.status === 'STARTED' && req.feeClaimedAt && attemptStatus === 'COMMITTED' && (
-                      <span className="text-xs text-indigo-500 font-medium ml-2">Submitted</span>
-                    )}
-                    {req.status === 'STARTED' && req.feeClaimedAt && attemptStatus !== 'COMMITTED' && (
-                      <span className="text-xs text-purple-400 italic ml-2">In progress</span>
-                    )}
                   </div>
                 </div>
               )
@@ -269,27 +249,13 @@ function QuizDetailModal({
 
         {/* Modal Actions */}
         <div className="flex gap-3 p-6 border-t border-gray-200 dark:border-zinc-700">
-          {canReveal ? (
-            <button
-              type="button"
-              onClick={() => router.push(`/teacher/reveal/${quiz.id}`)}
-              className="flex-1 py-2.5 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 text-sm"
-            >
-              🎯 Reveal & Grade
-            </button>
-          ) : quiz.status !== 'ACTIVE' ? (
-            <button
-              type="button"
-              onClick={() => router.push(`/teacher/reveal/${quiz.id}`)}
-              className="flex-1 py-2.5 rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-gray-200 font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 text-sm"
-            >
-              View Results
-            </button>
-          ) : (
-            <div className="flex-1 py-2.5 rounded-lg bg-gray-100 dark:bg-zinc-800 text-gray-400 text-center text-sm">
-              ⏳ Deadline not reached yet
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={() => router.push(`/teacher/reveal/${quiz.id}`)}
+            className="flex-1 py-2.5 rounded-lg border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-gray-200 font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 text-sm"
+          >
+            📊 View Results
+          </button>
           <button
             type="button"
             onClick={onClose}
@@ -304,7 +270,7 @@ function QuizDetailModal({
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Status Chip helpers (standalone functions to avoid nested component defs)
+// Status Chip helpers
 // ──────────────────────────────────────────────────────────────────────────
 function RequestStatusChip({
   status,
@@ -313,7 +279,6 @@ function RequestStatusChip({
   status: string
   attemptStatus?: string
 }) {
-  // Special case: STARTED + COMMITTED = student submitted answers
   if (status === 'STARTED' && attemptStatus === 'COMMITTED') {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300">
@@ -323,7 +288,6 @@ function RequestStatusChip({
   }
 
   const map: Record<string, { label: string; classes: string }> = {
-    PENDING:     { label: '⏳ Awaiting Approval',  classes: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300' },
     APPROVED:    { label: '💳 Waiting Payment',    classes: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' },
     PAID:        { label: '💰 Ready to Collect',   classes: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' },
     FEE_CLAIMED: { label: '✅ Fee Collected',      classes: 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300' },
@@ -355,7 +319,10 @@ export default function TeacherDashboard() {
 
   useEffect(() => {
     fetchData()
-    const interval = setInterval(fetchData, 30000)
+    // Refresh every 15s when any quiz is pending auto-reveal, otherwise every 30s
+    const interval = setInterval(() => {
+      fetchData()
+    }, 15000)
     return () => clearInterval(interval)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -380,25 +347,12 @@ export default function TeacherDashboard() {
     }
   }
 
-  const handleApproveRequest = async (requestId: string) => {
-    try {
-      setProcessingRequest(requestId)
-      await apiService.accessRequest.approve(requestId)
-      await fetchData()
-      showToast('Request approved! Student can now pay entry fee.', 'success')
-    } catch (err) {
-      showToast('Failed to approve: ' + (err instanceof Error ? err.message : 'Unknown error'), 'error')
-    } finally {
-      setProcessingRequest(null)
-    }
-  }
-
   const handleClaimEntryFee = async (requestId: string) => {
     try {
       setProcessingRequest(requestId)
       await apiService.accessRequest.claim(requestId)
       await fetchData()
-      showToast('Entry fee claimed successfully!', 'success')
+      showToast('Entry fee claimed successfully! 💰', 'success')
     } catch (err) {
       showToast('Failed to claim: ' + (err instanceof Error ? err.message : 'Unknown error'), 'error')
     } finally {
@@ -406,26 +360,26 @@ export default function TeacherDashboard() {
     }
   }
 
-  // Collect ALL entry fees for a quiz (called after deadline passes)
-  const handleClaimAllFees = async (quizId: string, paidRequestIds: string[]) => {
-    if (paidRequestIds.length === 0) return
+  // Collect ALL unclaimed entry fees for a quiz at once
+  const handleClaimAllFees = async (quizId: string, unclaimedRequestIds: string[]) => {
+    if (unclaimedRequestIds.length === 0) return
     try {
       setClaimingAllFor(quizId)
       let claimed = 0
-      for (const reqId of paidRequestIds) {
+      for (const reqId of unclaimedRequestIds) {
         try {
           await apiService.accessRequest.claim(reqId)
           claimed++
         } catch (err) {
           showToast(
-            `Fee ${claimed + 1}/${paidRequestIds.length} failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
+            `Fee ${claimed + 1}/${unclaimedRequestIds.length} failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
             'error'
           )
         }
       }
       await fetchData()
       if (claimed > 0) {
-        showToast(`${claimed} entry fee${claimed > 1 ? 's' : ''} collected successfully! 🎉`, 'success')
+        showToast(`${claimed} entry fee${claimed > 1 ? 's' : ''} collected! 🎉`, 'success')
       }
     } finally {
       setClaimingAllFor(null)
@@ -457,22 +411,20 @@ export default function TeacherDashboard() {
   }
 
   const isDeadlinePassed = (deadline: string) => new Date() >= new Date(deadline)
-  const canReveal = (quiz: Quiz) => quiz.status === 'ACTIVE' && isDeadlinePassed(quiz.deadline)
+
+  // Quizzes currently being auto-revealed (ACTIVE + deadline passed)
+  const revealingQuizzes = quizzes.filter(q => q.status === 'ACTIVE' && isDeadlinePassed(q.deadline))
 
   const quizzesWithRequests: QuizWithRequests[] = quizzes.map(quiz => ({
     ...quiz,
     requests: requests.filter(r => r.quizId === quiz.id),
   }))
 
-  // Global stats
-  const pendingCount = requests.filter(r => r.status === 'PENDING').length
-  // Claimable = PAID (not yet started) OR STARTED but fee not yet claimed
+  // isFeeUnclaimed: PAID (awaiting collection) OR STARTED but fee not yet claimed
   const isFeeUnclaimed = (r: AccessRequest) =>
     (r.status === 'PAID' || (r.status === 'STARTED' && !r.feeClaimedAt))
   const claimableCount = requests.filter(isFeeUnclaimed).length
   const totalAttempts = quizzes.reduce((s, q) => s + (q._count?.attempts || 0), 0)
-  const totalPrize = quizzes.reduce((s, q) => s + parseInt(q.prizePool || '0'), 0)
-  const prizeActionCount = quizzes.reduce((s, q) => s + getPrizeActionCount(q.attempts), 0)
 
   const QuizStatusBadge = ({ status }: { status: string }) => {
     const variants: Record<string, 'success' | 'info' | 'default' | 'danger'> = {
@@ -492,7 +444,6 @@ export default function TeacherDashboard() {
         <QuizDetailModal
           quiz={selectedQuiz}
           onClose={() => setSelectedQuiz(null)}
-          onApprove={handleApproveRequest}
           onClaim={handleClaimEntryFee}
           processingRequest={processingRequest}
           formatSats={formatSats}
@@ -515,7 +466,9 @@ export default function TeacherDashboard() {
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-1">Teacher Dashboard</h1>
-        <p className="text-gray-600 dark:text-gray-400">Manage your quizzes, approve requests, and reveal answers</p>
+        <p className="text-gray-600 dark:text-gray-400">
+          Create quizzes and collect entry fees — everything else happens automatically
+        </p>
       </div>
 
       {/* Wallet */}
@@ -526,22 +479,27 @@ export default function TeacherDashboard() {
       {/* Global Stats */}
       {!loading && (
         <>
-          {/* Prize action banner — shown prominently when winners are waiting */}
-          {prizeActionCount > 0 && (
+          {/* Auto-revealing quizzes banner */}
+          {revealingQuizzes.length > 0 && (
             <div className="mb-4 bg-amber-50 dark:bg-amber-900/20 border-2 border-amber-300 dark:border-amber-600 rounded-xl p-4 flex items-start gap-3">
-              <span className="text-2xl">⚡</span>
-              <div>
+              <span className="relative flex h-3 w-3 mt-0.5 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500" />
+              </span>
+              <div className="flex-1">
                 <p className="font-bold text-amber-800 dark:text-amber-200">
-                  {prizeActionCount} winner{prizeActionCount > 1 ? 's' : ''} waiting for prize payment
+                  {revealingQuizzes.length === 1
+                    ? `"${revealingQuizzes[0].title || revealingQuizzes[0].symbol}" is being auto-revealed`
+                    : `${revealingQuizzes.length} quizzes are being auto-revealed`}
                 </p>
                 <p className="text-sm text-amber-700 dark:text-amber-300 mt-0.5">
-                  Go to the quiz results page to create Prize Payments and Swap TXs for your winners.
+                  Deadline passed — answers will be revealed automatically. Results appear here once done.
                 </p>
               </div>
             </div>
           )}
 
-          {/* Unclaimed entry fees banner — shown when students have paid but teacher hasn't collected */}
+          {/* Unclaimed entry fees banner */}
           {claimableCount > 0 && (
             <div className="mb-6 bg-green-50 dark:bg-green-900/20 border-2 border-green-300 dark:border-green-600 rounded-xl p-4 flex items-start gap-3">
               <span className="text-2xl">💰</span>
@@ -550,28 +508,18 @@ export default function TeacherDashboard() {
                   {claimableCount} unclaimed entry fee{claimableCount > 1 ? 's' : ''} ready to collect
                 </p>
                 <p className="text-sm text-green-700 dark:text-green-300 mt-0.5">
-                  Students have paid their entry fees. Click "Collect Fee" on each quiz to receive your sats.
-                  After the quiz deadline passes, use the "Collect All" button for bulk collection.
+                  Students have paid their entry fees. Use the "Collect All" button on each quiz to receive your sats.
                 </p>
               </div>
             </div>
           )}
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
             <Card>
               <CardBody className="text-center">
                 <div className="text-3xl font-bold text-gray-900 dark:text-white">{quizzes.length}</div>
                 <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Quizzes</div>
                 <div className="text-xs text-green-600 mt-0.5">{quizzes.filter(q => q.status === 'ACTIVE').length} active</div>
-              </CardBody>
-            </Card>
-            <Card>
-              <CardBody className="text-center">
-                <div className={`text-3xl font-bold ${pendingCount > 0 ? 'text-orange-500' : 'text-gray-900 dark:text-white'}`}>
-                  {pendingCount}
-                </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Need Approval</div>
-                <div className="text-xs text-gray-400 mt-0.5">pending requests</div>
               </CardBody>
             </Card>
             <Card>
@@ -585,15 +533,9 @@ export default function TeacherDashboard() {
             </Card>
             <Card>
               <CardBody className="text-center">
-                <div className={`text-2xl font-bold ${prizeActionCount > 0 ? 'text-amber-500' : 'text-gray-900 dark:text-white'}`}>
-                  {prizeActionCount > 0 ? prizeActionCount : totalAttempts}
-                </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  {prizeActionCount > 0 ? 'Prize Pending' : 'Total Attempts'}
-                </div>
-                <div className="text-xs text-purple-600 mt-0.5">
-                  {prizeActionCount > 0 ? 'winners need payment' : `${formatSats(totalPrize)} sats prize`}
-                </div>
+                <div className="text-3xl font-bold text-gray-900 dark:text-white">{totalAttempts}</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Total Attempts</div>
+                <div className="text-xs text-purple-600 mt-0.5">across all quizzes</div>
               </CardBody>
             </Card>
           </div>
@@ -647,7 +589,6 @@ export default function TeacherDashboard() {
 
           {quizzesWithRequests.map(quiz => {
             const isExpanded = expandedQuizIds.has(quiz.id)
-            const quizPending = quiz.requests.filter(r => r.status === 'PENDING').length
             const quizClaimable = quiz.requests.filter(r =>
               r.status === 'PAID' || (r.status === 'STARTED' && !r.feeClaimedAt)
             ).length
@@ -657,11 +598,10 @@ export default function TeacherDashboard() {
               r => r.status === 'STARTED' && r.attempt?.status === 'COMMITTED'
             ).length
             const totalReqs = quiz.requests.length
-            const quizPrizeWaiting = getPrizeActionCount(quiz.attempts)
 
             return (
               <Card key={quiz.id} className="overflow-hidden">
-                {/* ── Card Header: clickable div (NOT a button) to avoid nesting ── */}
+                {/* Card Header: clickable to expand */}
                 <div
                   role="button"
                   tabIndex={0}
@@ -678,11 +618,6 @@ export default function TeacherDashboard() {
                           {quiz.title || `Quiz ${quiz.symbol}`}
                         </h3>
                         <QuizStatusBadge status={quiz.status} />
-                        {quizPending > 0 && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
-                            {quizPending} pending
-                          </span>
-                        )}
                         {quizClaimable > 0 && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 border border-green-300 dark:border-green-600">
                             💰 {quizClaimable} fee{quizClaimable > 1 ? 's' : ''} to collect
@@ -691,11 +626,6 @@ export default function TeacherDashboard() {
                         {quizSubmitted > 0 && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
                             {quizSubmitted} submitted
-                          </span>
-                        )}
-                        {quizPrizeWaiting > 0 && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-600 animate-pulse">
-                            ⚡ {quizPrizeWaiting} prize pending
                           </span>
                         )}
                       </div>
@@ -709,13 +639,18 @@ export default function TeacherDashboard() {
                         <div>
                           <span className="text-gray-500 dark:text-gray-400">Prize: </span>
                           <span className="font-medium text-green-600">{formatSats(quiz.prizePool)} sats</span>
+                          {quiz.prizePerWinner && quiz.winnerCount > 1 && (
+                            <span className="ml-1 text-xs text-indigo-500">
+                              ({formatSats(quiz.prizePerWinner)}/winner × {quiz.winnerCount})
+                            </span>
+                          )}
                         </div>
                         <div>
                           <span className="text-gray-500 dark:text-gray-400">Entry: </span>
                           <span className="font-medium text-gray-900 dark:text-white">{formatSats(quiz.entryFee)} sats</span>
                         </div>
                         <div>
-                          <span className="text-gray-500 dark:text-gray-400">Requests: </span>
+                          <span className="text-gray-500 dark:text-gray-400">Students: </span>
                           <span className="font-medium text-blue-600">{totalReqs}</span>
                         </div>
                         <div>
@@ -727,21 +662,32 @@ export default function TeacherDashboard() {
                       </div>
 
                       {/* Mini pipeline */}
-                      {(totalReqs > 0 || quizPrizeWaiting > 0) && (
+                      {totalReqs > 0 && (
                         <div className="flex gap-3 mt-2 text-xs flex-wrap">
-                          {quizPending > 0 && <span className="text-yellow-600">⏳ {quizPending} pending</span>}
-                          {quizApproved > 0 && <span className="text-blue-600">💳 {quizApproved} approved</span>}
+                          {quizApproved > 0 && <span className="text-blue-600">💳 {quizApproved} awaiting payment</span>}
                           {quizClaimable > 0 && <span className="text-green-600">✅ {quizClaimable} paid</span>}
                           {quizStarted > 0 && <span className="text-purple-600">🎓 {quizStarted} started</span>}
                           {quizSubmitted > 0 && <span className="text-indigo-600">📝 {quizSubmitted} submitted</span>}
-                          {quizPrizeWaiting > 0 && <span className="text-amber-600 font-semibold">⚡ {quizPrizeWaiting} winner{quizPrizeWaiting > 1 ? 's' : ''} need prize payment</span>}
+                        </div>
+                      )}
+
+                      {/* Auto-reveal banner */}
+                      {quiz.status === 'ACTIVE' && isDeadlinePassed(quiz.deadline) && (
+                        <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700">
+                          <span className="relative flex h-2.5 w-2.5 shrink-0">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+                          </span>
+                          <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                            Auto-revealing answers — results will appear shortly
+                          </span>
                         </div>
                       )}
                     </div>
 
-                    {/* Right: Actions (stop propagation so quiz expand isn't triggered) */}
+                    {/* Right: Actions */}
                     <div className="flex flex-col items-end gap-2 shrink-0">
-                      {/* Top row: Summary + Details */}
+                      {/* Summary + Details buttons */}
                       <div className="flex items-center gap-2">
                         <div
                           role="none"
@@ -759,12 +705,12 @@ export default function TeacherDashboard() {
                             setSelectedQuiz(quiz)
                           }}
                         >
-                          <Button variant="outline" size="sm">👥 Requests</Button>
+                          <Button variant="outline" size="sm">👥 Students</Button>
                         </div>
                       </div>
 
-                      {/* Collect All Entry Fees — prominent after deadline passes */}
-                      {quizClaimable > 0 && isDeadlinePassed(quiz.deadline) && (
+                      {/* Collect All Entry Fees button */}
+                      {quizClaimable > 0 && (
                         <div role="none" onClick={e => e.stopPropagation()}>
                           <button
                             type="button"
@@ -788,49 +734,29 @@ export default function TeacherDashboard() {
                         </div>
                       )}
 
-                      {/* Collect note — before deadline */}
-                      {quizClaimable > 0 && !isDeadlinePassed(quiz.deadline) && (
-                        <span className="text-xs text-green-600 dark:text-green-400 font-medium">
-                          💰 {quizClaimable} fee{quizClaimable > 1 ? 's' : ''} ready (via Requests)
-                        </span>
-                      )}
-
-                      {/* Primary reveal / results action */}
-                      {canReveal(quiz) ? (
-                        <div role="none" onClick={e => e.stopPropagation()}>
-                          <Link href={`/teacher/reveal/${quiz.id}`}>
-                            <Button variant="primary" size="sm">🎯 Reveal & Grade</Button>
-                          </Link>
-                        </div>
-                      ) : quiz.status !== 'ACTIVE' ? (
-                        <div role="none" onClick={e => e.stopPropagation()}>
-                          <Link href={`/teacher/reveal/${quiz.id}`}>
-                            <Button
-                              variant={quizPrizeWaiting > 0 ? 'primary' : 'outline'}
-                              size="sm"
-                            >
-                              {quizPrizeWaiting > 0 ? `⚡ Pay ${quizPrizeWaiting} Winner${quizPrizeWaiting > 1 ? 's' : ''}` : 'View Results'}
-                            </Button>
-                          </Link>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-400 dark:text-gray-500 italic">⏳ Deadline not reached</span>
-                      )}
+                      {/* View Results — always shown for non-ACTIVE or post-deadline */}
+                      <div role="none" onClick={e => e.stopPropagation()}>
+                        <Link href={`/teacher/reveal/${quiz.id}`}>
+                          <Button variant="outline" size="sm">
+                            📊 View Results
+                          </Button>
+                        </Link>
+                      </div>
 
                       {/* Expand chevron */}
                       <span className="text-gray-400 text-sm">
-                        {isExpanded ? '▲ Collapse' : `▼ Requests (${totalReqs})`}
+                        {isExpanded ? '▲ Collapse' : `▼ Students (${totalReqs})`}
                       </span>
                     </div>
                   </CardHeader>
                 </div>
 
-                {/* Expanded request list */}
+                {/* Expanded student request list */}
                 {isExpanded && (
                   <CardBody className="border-t border-gray-100 dark:border-gray-700 pt-4 pb-4">
                     {quiz.requests.length === 0 ? (
                       <p className="text-center text-sm text-gray-500 dark:text-gray-400 py-4">
-                        No access requests yet.
+                        No students enrolled yet.
                       </p>
                     ) : (
                       <div className="space-y-3">
@@ -863,26 +789,15 @@ export default function TeacherDashboard() {
                                 )}
                                 {attemptStatus === 'COMMITTED' && (
                                   <div className="text-xs text-indigo-600 mt-0.5 font-medium">
-                                    📝 Answers submitted — awaiting reveal
+                                    📝 Answers submitted
                                   </div>
                                 )}
                               </div>
 
-                              {/* Action buttons — plain buttons, no Link wrapping */}
                               <div className="shrink-0">
-                                {req.status === 'PENDING' && (
-                                  <button
-                                    type="button"
-                                    onClick={e => { e.stopPropagation(); handleApproveRequest(req.id) }}
-                                    disabled={processingRequest === req.id}
-                                    className="text-sm px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium"
-                                  >
-                                    {processingRequest === req.id ? '⏳ Approving...' : 'Approve'}
-                                  </button>
-                                )}
                                 {req.status === 'APPROVED' && (
                                   <span className="text-xs text-blue-500 dark:text-blue-400 italic">
-                                    Waiting for payment...
+                                    Awaiting payment...
                                   </span>
                                 )}
                                 {(req.status === 'PAID' || (req.status === 'STARTED' && !req.feeClaimedAt)) && (

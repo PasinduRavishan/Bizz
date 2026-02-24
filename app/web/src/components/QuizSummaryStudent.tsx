@@ -21,6 +21,7 @@ interface QuizAttempt {
   answerProofId?: string | null
   prizePaymentId?: string | null
   swapTxHex?: string | null
+  prizeAmount?: string | null          // actual prize awarded (per-winner share)
   quiz: {
     id: string
     contractId: string
@@ -30,6 +31,8 @@ interface QuizAttempt {
     passThreshold: number
     status: string
     prizePool: string
+    prizePerWinner: string | null      // per-winner share (set at reveal)
+    winnerCount?: number               // number of winners
     entryFee: string
     deadline?: string
   }
@@ -171,6 +174,10 @@ function AttemptSummary({
   const now = new Date()
   const deadlinePassed = attempt.quiz.deadline ? new Date(attempt.quiz.deadline) < now : false
 
+  // Resolve the effective per-student prize (per-winner share takes priority)
+  const effectivePrize = attempt.prizeAmount ?? attempt.quiz.prizePerWinner ?? attempt.quiz.prizePool
+  const isMultiWinner = (attempt.quiz.winnerCount ?? 1) > 1
+
   // Decide if prize steps are relevant
   const prizeRelevant = isPassed || resultVerified
 
@@ -205,16 +212,26 @@ function AttemptSummary({
             <div className="text-right text-sm">
               <div className="text-green-600 dark:text-green-400 font-bold">🏆 Prize Available</div>
               <div className="text-green-700 dark:text-green-300 text-lg font-bold">
-                {formatSats(attempt.quiz.prizePool)} sats
+                {formatSats(effectivePrize)} sats
               </div>
+              {isMultiWinner && (
+                <div className="text-xs text-indigo-500 mt-0.5">
+                  {attempt.quiz.winnerCount} winners share equally
+                </div>
+              )}
             </div>
           )}
           {prizeClaimed && (
             <div className="text-right text-sm">
               <div className="text-green-600 dark:text-green-400 font-bold">Earned</div>
               <div className="text-green-700 dark:text-green-300 text-lg font-bold">
-                {formatSats(attempt.quiz.prizePool)} sats
+                {formatSats(effectivePrize)} sats
               </div>
+              {isMultiWinner && (
+                <div className="text-xs text-indigo-500 mt-0.5">
+                  your share of {formatSats(attempt.quiz.prizePool)} sat pool
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -259,7 +276,7 @@ function AttemptSummary({
       {(prizeRelevant || isPassed) && (
         <>
           <SectionHeading>
-            Prize Claim Steps {isPassed ? `— ${formatSats(attempt.quiz.prizePool)} sats` : ''}
+            Prize Claim Steps {isPassed ? `— ${formatSats(effectivePrize)} sats${isMultiWinner ? ` (your share)` : ''}` : ''}
           </SectionHeading>
 
           <StepRow
@@ -284,7 +301,7 @@ function AttemptSummary({
             done={prizeClaimed}
             label="Swap Executed & Prize Claimed"
             detail={prizeClaimed
-              ? `${formatSats(attempt.quiz.prizePool)} sats received in your wallet`
+              ? `${formatSats(effectivePrize)} sats received in your wallet`
               : hasSwap
               ? 'Go to Claim Prize to execute the swap'
               : 'Waiting for swap to be prepared'}
@@ -312,7 +329,12 @@ function AttemptSummary({
           { label: 'Questions', value: attempt.quiz.questionCount },
           { label: 'Pass Threshold', value: `${attempt.quiz.passThreshold}%` },
           { label: 'Entry Fee Paid', value: `${formatSats(attempt.quiz.entryFee)} sats` },
-          { label: 'Prize Pool', value: `${formatSats(attempt.quiz.prizePool)} sats` },
+          {
+            label: isMultiWinner ? 'Prize (Your Share)' : 'Prize Pool',
+            value: isMultiWinner
+              ? `${formatSats(effectivePrize)} sats (of ${formatSats(attempt.quiz.prizePool)})`
+              : `${formatSats(attempt.quiz.prizePool)} sats`,
+          },
         ].map(({ label, value }) => (
           <div key={label} className="flex justify-between p-2 rounded bg-gray-50 dark:bg-zinc-800">
             <span className="text-gray-500 dark:text-gray-400">{label}</span>
@@ -399,8 +421,8 @@ function RequestSummary({
       />
       <StepRow
         done={isApproved}
-        label="Teacher Approved Request"
-        detail={isApproved && request.approvedAt ? formatDate(request.approvedAt) : 'Waiting for teacher approval'}
+        label="Access Granted (Auto-Approved)"
+        detail={isApproved && request.approvedAt ? formatDate(request.approvedAt) : 'Setting up automatically…'}
       />
       <StepRow
         done={isPaid}
@@ -410,7 +432,7 @@ function RequestSummary({
             ? `${formatSats(request.quiz.entryFee)} sats paid on ${formatDate(request.paidAt)}`
             : isApproved
             ? `Pay ${formatSats(request.quiz.entryFee)} sats to unlock the quiz`
-            : 'Waiting for approval first'
+            : 'Waiting for access setup'
         }
       />
       <StepRow
