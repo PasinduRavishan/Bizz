@@ -16,7 +16,7 @@ export class QuizAccess extends Contract {
         const [teacher] = mintedToken._owners;
         const [student] = entryFeePayment._owners;
         entryFeePayment.transfer(teacher);
-        mintedToken._owners = [student];
+        mintedToken.transferTo(student);
         return [entryFeePayment, mintedToken];
     }
 }

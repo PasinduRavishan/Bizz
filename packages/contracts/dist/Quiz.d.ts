@@ -45,6 +45,13 @@ export declare class Quiz extends Token {
     constructor(to: string, initialSupply: bigint, symbol: string, teacher: string, questionHashIPFS: string, answerHashes: string[], prizePool: bigint, entryFee: bigint, passThreshold: number, deadline: number, teacherRevealDeadline?: number | null, originalQuizId?: string);
     mint(to: string, amount: bigint): Quiz;
     transfer(recipient: string, amount: bigint): Quiz;
+    /**
+     * Transfer ownership of this token to another address (in-place).
+     * Used by QuizAccess.exec to assign a pre-minted teacher-owned token
+     * to the student without creating a new UTXO.
+     * Pattern: same as NFT.transfer(to) in the Bitcoin Computer docs.
+     */
+    transferTo(to: string): void;
     burn(): void;
     revealAnswers(answers: string[], salt: string): void;
     distributePrizes(winners?: Array<{

@@ -91,6 +91,15 @@ export class Quiz extends Token {
         this.questionHashIPFS, this.answerHashes, this.prizePool, this.entryFee, this.passThreshold, this.deadline, this.teacherRevealDeadline, quizId // Preserve original quiz ID
         );
     }
+    /**
+     * Transfer ownership of this token to another address (in-place).
+     * Used by QuizAccess.exec to assign a pre-minted teacher-owned token
+     * to the student without creating a new UTXO.
+     * Pattern: same as NFT.transfer(to) in the Bitcoin Computer docs.
+     */
+    transferTo(to) {
+        this._owners = [to];
+    }
     burn() {
         this.amount = 0n;
     }

@@ -8,6 +8,7 @@ interface Quiz extends Contract {
     entryFee: bigint;
     mint(to: string, amount: bigint): Quiz;
     transfer(recipient: string, amount: bigint): Quiz;
+    transferTo(to: string): void;
 }
 interface Payment extends Contract {
     _owners: string[];
