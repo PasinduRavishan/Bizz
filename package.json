@@ -1,38 +1,30 @@
 {
-  "name": "bizz",
+  "name": "bizz-monorepo",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
-    "test:contracts": "node scripts/test-contracts.js",
-    "deploy:testnet": "node scripts/deploy-testnet.js"
-  },
-  "dependencies": {
-    "@bitcoin-computer/lib": "^0.26.0-beta.0",
-    "@radix-ui/react-dialog": "^1.1.15",
-    "@radix-ui/react-dropdown-menu": "^2.1.16",
-    "@radix-ui/react-tabs": "^1.1.13",
-    "crypto-js": "^4.2.0",
-    "date-fns": "^4.1.0",
-    "ipfs-http-client": "^60.0.1",
-    "lucide-react": "^0.562.0",
-    "next": "16.1.1",
-    "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "dev": "npm run dev -w @bizz/web",
+    "build": "npm run build -w @bizz/contracts && npm run build -w @bizz/web",
+    "start": "npm run start -w @bizz/web",
+    "lint": "npm run lint --workspaces",
+    "test": "npm run test -w @bizz/tests",
+    "test:swap": "npm run test:swap -w @bizz/tests",
+    "test:flow": "npm run test:flow -w @bizz/tests",
+    "test:watch": "npm run test:watch -w @bizz/tests",
+    "db:generate": "npm run db:generate -w @bizz/web",
+    "db:migrate": "npm run db:migrate -w @bizz/web",
+    "db:studio": "npm run db:studio -w @bizz/web",
+    "db:push": "npm run db:push -w @bizz/web",
+    "indexer": "npm run indexer -w @bizz/web",
+    "indexer:once": "npm run indexer:once -w @bizz/web",
+    "indexer:status": "npm run indexer:status -w @bizz/web",
+    "clean": "rm -rf packages/*/node_modules packages/*/.next packages/*/dist node_modules"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/crypto-js": "^4.2.2",
     "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "babel-plugin-react-compiler": "1.0.0",
-    "eslint": "^9",
-    "eslint-config-next": "16.1.1",
-    "tailwindcss": "^4",
     "typescript": "^5"
   }
 }

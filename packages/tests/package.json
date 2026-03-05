@@ -1,0 +1,29 @@
+{
+  "name": "@bizz/tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean",
+    "pretest": "npm run build",
+    "test": "mocha dist/**/*.test.js",
+    "test:swap": "mocha --config .mocharc.swap.json dist/swap-flow.test.js",
+    "test:flow": "mocha dist/complete-flow.test.js",
+    "test:tbc20": "mocha dist/tbc20.test.js",
+    "test:watch": "tsc --watch & mocha --watch dist/**/*.test.js"
+  },
+  "dependencies": {
+    "@bizz/contracts": "*",
+    "@bitcoin-computer/lib": "^0.26.0-beta.0",
+    "dotenv": "^17.2.3"
+  },
+  "devDependencies": {
+    "@types/chai": "^5.2.3",
+    "@types/mocha": "^10.0.10",
+    "chai": "^6.2.2",
+    "mocha": "^11.7.5"
+  }
+}

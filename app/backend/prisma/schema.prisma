@@ -1,0 +1,285 @@
+// Database schema for Bizz Quiz Platform
+// This is the off-chain database that indexes blockchain data
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note: Using Prisma 5 syntax. VSCode extension may show errors if it's using Prisma 7.
+// The schema is valid - run `npx prisma validate` to confirm.
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+        
+
+// User model - tracks users with authentication and blockchain data
+model User {
+  id            String   @id @default(cuid())
+  
+  // Authentication fields
+  email         String?  @unique
+  name          String?
+  passwordHash  String?
+  
+  // Blockchain fields (optional - linked when wallet is connected)
+  publicKey     String?  @unique
+  address       String?  @unique
+  
+  // Custodial wallet fields (NEW)
+  encryptedMnemonic String?  // Encrypted BIP39 mnemonic for user's wallet
+  walletType        String   @default("CUSTODIAL") // 'CUSTODIAL' | 'CONNECTED' | 'NONE'
+  walletBalance     BigInt   @default(0) // Cached balance in satoshis
+  lastBalanceCheck  DateTime? // Last time balance was updated
+  
+  role          Role     @default(STUDENT)
+  
+  // Stats
+  totalEarnings BigInt   @default(0)
+  quizzesCreated Int     @default(0)
+  quizzesTaken   Int     @default(0)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  quizzes       Quiz[]
+  attempts      QuizAttempt[]
+  accessRequests    QuizAccessRequest[] @relation("StudentRequests")
+  approvedRequests  QuizAccessRequest[] @relation("ApprovedRequests")
+
+  @@index([email])
+  @@index([publicKey])
+  @@index([address])
+}
+
+enum Role {
+  TEACHER
+  STUDENT
+  BOTH
+}
+
+// Quiz model - indexes on-chain Quiz contracts
+model Quiz {
+  id                String   @id @default(cuid())
+
+  // Blockchain data
+  contractId        String   @unique  // _id from Bitcoin Computer
+  contractRev       String?  @unique  // _rev from Bitcoin Computer
+  txHash            String?            // Transaction hash
+  moduleSpecifier   String?            // Module specifier for contract calls
+
+  // Quiz data
+  teacherId         String
+  teacher           User     @relation(fields: [teacherId], references: [id])
+
+  symbol            String             // Quiz token symbol (TBC20)
+  questions         Json?              // Full questions stored in database (backup)
+  questionHashIPFS  String             // IPFS hash of questions
+  correctAnswers    Json               // Stored for reveal (encrypted or plain)
+  answerHashes      Json               // Array of hashed answers
+  salt              String             // Salt used in hashing (kept secret until reveal)
+  questionCount     Int
+
+  // Economics
+  prizePool         BigInt
+  entryFee          BigInt
+  passThreshold     Int                // 0-100
+
+  // Multi-winner prize distribution (calculated at reveal time)
+  winnerCount       Int      @default(0)   // number of passing students
+  prizePerWinner    BigInt?               // = prizePool / winnerCount (null until revealed)
+
+  // Timing
+  deadline              DateTime
+  teacherRevealDeadline DateTime
+
+  // State
+  status            QuizStatus @default(ACTIVE)
+  revealedAnswers   Json?              // Actual answers after reveal
+
+  // Metadata
+  title             String?            // Optional title (not on chain)
+  description       String?            // Optional description
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  attempts          QuizAttempt[]
+  accessRequests    QuizAccessRequest[]
+
+  @@index([teacherId])
+  @@index([status])
+  @@index([deadline])
+  @@index([contractId])
+}
+
+enum QuizStatus {
+  ACTIVE
+  REVEALED
+  COMPLETED
+}
+
+// QuizAttempt model - indexes on-chain QuizAttempt contracts
+model QuizAttempt {
+  id              String   @id @default(cuid())
+
+  // Blockchain data
+  contractId      String   @unique  // _id from Bitcoin Computer
+  contractRev     String?  @unique  // _rev from Bitcoin Computer
+  txHash          String?            // Transaction hash
+
+  // Attempt data
+  userId          String
+  student         User     @relation(fields: [userId], references: [id])
+
+  quizId          String
+  quiz            Quiz     @relation(fields: [quizId], references: [id])
+
+  quizTokenRev    String?            // Student's quiz token _rev (burned after redemption)
+
+  // Student answers
+  answers         Json?              // Student's answers (stored after submission)
+  nonce           String?            // Commitment nonce
+  answerCommitment String?           // Hash of answers + nonce
+
+  // Results
+  score           Int?               // 0-100
+  passed          Boolean?
+
+  // Prize tracking
+  answerProofId   String?            // AnswerProof contract ID (if winner)
+  prizePaymentId  String?            // Prize Payment contract ID (if winner)
+  prizePaymentRev String?            // Prize Payment _rev (for claiming)
+  swapTxHex       String?            // Partial SWAP transaction hex (created by teacher)
+  prizeAmount     BigInt?            // Actual prize awarded (= prizePerWinner at verify time)
+
+  // State
+  status          AttemptStatus @default(CREATED)
+
+  // Relations
+  accessRequest     QuizAccessRequest?
+
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([quizId])
+  @@index([status])
+  @@index([contractId])
+}
+
+enum AttemptStatus {
+  CREATED
+  OWNED
+  COMMITTED
+  VERIFIED
+  PRIZE_CLAIMED
+}
+
+// Note: Removed Winner model - tracking winners via QuizAttempt.passed field instead
+
+// Transaction model - tracks all blockchain transactions
+model Transaction {
+  id          String   @id @default(cuid())
+  
+  txHash      String   @unique
+  type        TransactionType
+  status      TransactionStatus @default(PENDING)
+  
+  fromAddress String
+  toAddress   String?
+  amount      BigInt?
+  
+  // Related entities
+  relatedQuizId    String?
+  relatedAttemptId String?
+  
+  errorMessage String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([txHash])
+  @@index([type])
+  @@index([status])
+  @@index([fromAddress])
+}
+
+enum TransactionType {
+  QUIZ_CREATION
+  QUIZ_ATTEMPT
+  REVEAL_ANSWERS
+  PAYOUT
+  REFUND
+}
+
+enum TransactionStatus {
+  PENDING
+  CONFIRMING
+  CONFIRMED
+  FAILED
+}
+
+// IndexerState - tracks indexer sync status
+model IndexerState {
+  id              String   @id @default("singleton")
+  lastBlockHeight Int      @default(0)
+  lastSyncTime    DateTime @default(now())
+
+  updatedAt       DateTime @updatedAt
+}
+
+// QuizAccessRequest - tracks student access request flow
+model QuizAccessRequest {
+  id              String              @id @default(cuid())
+  quizId          String
+  studentId       String
+  status          QuizAccessStatus    @default(PENDING)
+
+  // Teacher approval phase
+  partialExecTx   Json?               // Partial signed transaction (serialized)
+  approvedAt      DateTime?
+  approvedBy      String?             // Teacher who approved
+
+  // Student payment phase
+  quizTokenId     String?             // Blockchain NFT ID (rev:...)
+  entryPaymentId  String?             // Payment contract _id (used to claim entry fee)
+  paidAt          DateTime?
+
+  // Fee collection phase (teacher claims entry fee — independent of quiz start)
+  feeClaimedAt    DateTime?
+
+  // Quiz start phase
+  attemptId       String?             @unique // Links to QuizAttempt
+  startedAt       DateTime?
+
+  // Metadata
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  // Relations
+  quiz            Quiz                @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  student         User                @relation("StudentRequests", fields: [studentId], references: [id], onDelete: Cascade)
+  approver        User?               @relation("ApprovedRequests", fields: [approvedBy], references: [id])
+  attempt         QuizAttempt?        @relation(fields: [attemptId], references: [id])
+
+  @@index([studentId])
+  @@index([quizId])
+  @@index([status])
+  @@index([approvedBy])
+}
+
+enum QuizAccessStatus {
+  PENDING      // Student requested access
+  APPROVED     // Teacher approved, partial tx created
+  PAID         // Student paid entry fee, has Quiz Token NFT
+  FEE_CLAIMED  // Teacher claimed the entry fee payment
+  STARTED      // Student burned NFT, quiz attempt active
+  COMPLETED    // Student submitted answers
+  CANCELLED    // Cancelled by student
+  REJECTED     // Rejected by teacher
+}

@@ -31,8 +31,9 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
-.env*
+.env
 .env.local
+.env.wallet
 
 # vercel
 .vercel
@@ -40,3 +41,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+/.idea/
+/packages/web/.next/
+/packages/web/node_modules/
+/app/web/node_modules/
+/app/web/.next/

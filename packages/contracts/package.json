@@ -1,0 +1,29 @@
+{
+  "name": "@bizz/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./dist/*": "./dist/*",
+    "./deploy/*": "./deploy/*"
+  },
+  "scripts": {
+    "build": "tsc && node scripts/build-deploy.js",
+    "build:ts": "tsc",
+    "build:deploy": "node scripts/build-deploy.js",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist deploy"
+  },
+  "dependencies": {
+    "@bitcoin-computer/lib": "^0.26.0-beta.0"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}
